@@ -1,4 +1,5 @@
 #include "ListeningSocket.hpp"
+#include <cstring>
 
 int ListeningSocket::create_non_blocking_socket_fd()
 {
@@ -24,7 +25,8 @@ ListeningSocket::ListeningSocket(int port)
 {
     int server_fd = get_listen_socket_fd();
 
-    struct sockaddr_in adrr = {0};
+    struct sockaddr_in adrr;
+    std::memset(&adrr, 0, sizeof(adrr));
     adrr.sin_family = AF_INET;
     adrr.sin_port = htons(port);
     adrr.sin_addr.s_addr = INADDR_ANY;
@@ -34,20 +36,6 @@ ListeningSocket::ListeningSocket(int port)
 
     if (listen(server_fd, 128) == -1)
         throw std::runtime_error("ERROR func listen");
-}
-
-ListeningSocket::ListeningSocket(const ListeningSocket &src)
-{
-    *this = src;
-}
-
-ListeningSocket &ListeningSocket::operator=(const ListeningSocket &rhs)
-{
-    if (this != &rhs)
-    {
-        // copy members
-    }
-    return (*this);
 }
 
 ListeningSocket::~ListeningSocket(void)
@@ -60,7 +48,8 @@ int ListeningSocket::accept_conection()
 
     if (fd_client < 0)
         return -1;
-    if (fcntl(fd_client, F_SETFL, O_NONBLOCK) == -1){
+    if (fcntl(fd_client, F_SETFL, O_NONBLOCK) == -1)
+    {
         close(fd_client);
         return -1;
     }
