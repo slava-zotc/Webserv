@@ -5,17 +5,19 @@ CXXFLAGS = -std=c++98 -Wall -Wextra -Werror -g
 
 SRC_DIR = src
 OBJ_DIR = obj
+INCLUDE_DIR = include
 
 SRCS = \
 	$(SRC_DIR)/main.cpp \
 	$(SRC_DIR)/Core.cpp \
 	$(SRC_DIR)/Socket.cpp \
 	$(SRC_DIR)/ListeningSocket.cpp \
-	$(SRC_DIR)/ClientSocket.cpp
+	$(SRC_DIR)/ClientSocket.cpp \
+	$(SRC_DIR)/HttpRequest.cpp
 
 OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
-INCLUDES = -I$(SRC_DIR)
+INCLUDES = -I$(INCLUDE_DIR)
 
 .PHONY: all clean fclean re
 
