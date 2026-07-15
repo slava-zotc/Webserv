@@ -1,0 +1,7 @@
+*.o
+docs
+doc
+.clan*
+*json
+Doxy*
+
