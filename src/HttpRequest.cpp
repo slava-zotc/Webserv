@@ -6,14 +6,7 @@
 #include <string>
 
 HttpRequest::HttpRequest(void)
-	: internal_buffer_(),
-	  method_(UNKNOWN),
-	  parsing_state_(PARSING_START),
-	  path_(),
-	  version_(),
-	  body_(),
-	  headers_(),
-	  content_length_(0)
+	: method_(UNKNOWN), parsing_state_(PARSING_START), content_length_(0)
 {
 }
 

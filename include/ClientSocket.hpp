@@ -3,7 +3,6 @@
 
 #include <unistd.h>
 
-#include <iostream>
 #include <string>
 
 #include "Socket.hpp"
