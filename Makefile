@@ -13,7 +13,8 @@ SRCS = \
 	$(SRC_DIR)/Socket.cpp \
 	$(SRC_DIR)/ListeningSocket.cpp \
 	$(SRC_DIR)/ClientSocket.cpp \
-	$(SRC_DIR)/HttpRequest.cpp
+	$(SRC_DIR)/HttpRequest.cpp \
+	$(SRC_DIR)/HttpResponse.cpp
 
 OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 

@@ -57,3 +57,7 @@ std::string HttpResponse::serialize() const
 	ss << body_;
 	return ss.str();
 }
+
+HttpResponse::~HttpResponse()
+{
+}

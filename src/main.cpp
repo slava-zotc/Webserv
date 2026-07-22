@@ -1,31 +1,19 @@
+#include <exception>
+#include <iostream>
+
 #include "Core.hpp"
 
-/**
- * @file main.cpp
- * @brief Точка входа простого HTTP-сервера на C++
- *
- * Создает объект Core, который инициализирует сервер на порте 8080
- * и запускает главный event loop для обработки входящих HTTP-запросов.
- *
- * Использование:
- * - Скомпилировать: make
- * - Запустить: ./webserv
- * - Остановить: Ctrl+C
- */
-
-/**
- * @brief Главная функция программы
- * @return 0 при успешном завершении
- */
 int main()
 {
-    // Создаём объект Core и инициализируем сервер на порте 8080
-    Core core(8080);
-
-    // Запускаем главный event loop
-    // Цикл завершится при получении сигнала SIGINT (Ctrl+C)
-    core.core_loop();
-
-    // Деструктор Core автоматически закроет все сокеты
-    return 0;
+	try
+	{
+		Core core(8080);
+		core.core_loop();
+	}
+	catch (std::exception& e)
+	{
+		std::cerr << e.what() << std::endl;
+		return 1;
+	}
+	return 0;
 }

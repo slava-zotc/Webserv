@@ -5,6 +5,7 @@
 
 #include <string>
 
+#include "HttpRequest.hpp"
 #include "Socket.hpp"
 
 class ClientSocket
@@ -36,9 +37,7 @@ public:
 private:
 	enum State
 	{
-		READ_HEADERS,
-		READ_BODY,
-		PROCESS,
+		READING,
 		READY_SEND,
 		READY_DELETE
 	};
@@ -47,7 +46,7 @@ private:
 	ClientSocket& operator=(const ClientSocket& rhs);
 	Socket socket_fd;
 	std::string response_buffer;
-	std::string request_buffer;
+	HttpRequest request;
 	std::string::size_type partial_write;
 	State state_client;
 };

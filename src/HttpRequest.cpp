@@ -132,6 +132,11 @@ HttpRequest::ParsingState HttpRequest::parse(const std::string& data)
 	return parsing_state_;
 }
 
+HttpRequest::ParsingState HttpRequest::get_parsing_state() const
+{
+	return parsing_state_;
+}
+
 HttpRequest::~HttpRequest(void)
 {
 }
