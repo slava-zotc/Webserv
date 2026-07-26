@@ -1,0 +1,49 @@
+#ifndef ROUTE_HPP
+#define ROUTE_HPP
+#include <string>
+
+
+struct CFG_Route
+{
+	std::string prefix_;
+	std::string root_;
+	bool autoindex_;
+	std::string index_file_;
+	bool has_redirect_;
+	std::string redirect_target_;
+	int allowed_methods_;
+};
+
+
+class Route
+{
+public:
+	Route(const CFG_Route &config);
+	~Route();
+	enum Method
+	{
+		GET = 1 << 0,
+		POST = 1 << 1,
+		DELETE = 1 << 2
+
+	};
+
+	std::string get_prefix() const;
+	std::string get_root() const;
+	std::string get_index_file() const;
+	std::string get_redirect_target() const;
+	int get_allowed_methods() const;
+	Route(const Route& src);
+	Route& operator=(const Route& rhs);
+
+private:
+	std::string prefix_;
+	std::string root_;
+	bool autoindex_;
+	std::string index_file_;
+	bool has_redirect_;
+	std::string redirect_target_;
+	int allowed_methods_;
+	Route();
+};
+#endif
