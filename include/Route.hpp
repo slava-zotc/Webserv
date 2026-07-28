@@ -28,10 +28,12 @@ public:
 
 	};
 
-	std::string get_prefix() const;
-	std::string get_root() const;
-	std::string get_index_file() const;
-	std::string get_redirect_target() const;
+	const std::string& get_prefix() const;
+	const std::string& get_root() const;
+	const std::string& get_index_file() const;
+	const std::string& get_redirect_target() const;
+	bool get_autoindex() const;
+	bool get_has_redirect() const;
 	int get_allowed_methods() const;
 	Route(const Route& src);
 	Route& operator=(const Route& rhs);

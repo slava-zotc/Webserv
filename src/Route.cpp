@@ -39,23 +39,33 @@ Route::~Route(void)
 {
 }
 
-std::string Route::get_prefix() const
+const std::string& Route::get_prefix() const
 {
 	return prefix_;
 }
-std::string Route::get_root() const
+const std::string& Route::get_root() const
 {
 	return root_;
 }
-std::string Route::get_index_file() const
+const std::string& Route::get_index_file() const
 {
 	return index_file_;
 }
-std::string Route::get_redirect_target() const
+const std::string& Route::get_redirect_target() const
 {
 	return redirect_target_;
 }
 int Route::get_allowed_methods() const
 {
 	return allowed_methods_;
+}
+
+bool Route::get_autoindex() const
+{
+	return autoindex_;
+}
+
+bool Route::get_has_redirect() const
+{
+	return has_redirect_;
 }
