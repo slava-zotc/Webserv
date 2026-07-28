@@ -1,13 +1,13 @@
 #include "Route.hpp"
 
-Route(const CFG_Route& config)
+Route::Route(const CFG_Route& config)
 	: prefix_(config.prefix_),
 	  root_(config.root_),
-	  autoindex_(config.aut),
-	  index_file_(config.),
-	  has_redirect_(config),
-	  redirect_target_(config),
-	  allowed_methods_(config.)
+	  autoindex_(config.autoindex_),
+	  index_file_(config.index_file_),
+	  has_redirect_(config.has_redirect_),
+	  redirect_target_(config.redirect_target_),
+	  allowed_methods_(config.allowed_methods_)
 {
 }
 
