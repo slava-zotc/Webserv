@@ -34,6 +34,18 @@ Core::Core(int port)
 	listening_sockets[server_socket->get_listen_socket_fd()] = server_socket;
 }
 
+Core::Core(std::vector<Server*>& servers)
+{
+	for (size_t i = 0; i < servers.size(); i++)
+	{
+		ListeningSocket* server_socket =
+			new ListeningSocket(servers[i]->get_port());
+		int fd = server_socket->get_listen_socket_fd();
+		listening_sockets[fd] = server_socket;
+		server_for_listening_fd[fd] = servers[i];
+	}
+}
+
 /**
  * @brief Преобразует маску событий ClientSocket в маску для poll()
  * @param mask Маска из ClientSocket::Events (WANT_READ, WANT_WRITE)
@@ -119,7 +131,8 @@ void Core::core_loop()
 					int client_fd = it_listening->second->accept_conection();
 					if (client_fd != -1)
 					{
-						client_sockets[client_fd] = new ClientSocket(client_fd);
+						Server* server = server_for_listening_fd[fds[i].fd];
+						client_sockets[client_fd] = new ClientSocket(client_fd, server);
 					}
 				}
 				// Это клиентский сокет - чтение данных

@@ -43,18 +43,22 @@ const std::string& Route::get_prefix() const
 {
 	return prefix_;
 }
+
 const std::string& Route::get_root() const
 {
 	return root_;
 }
+
 const std::string& Route::get_index_file() const
 {
 	return index_file_;
 }
+
 const std::string& Route::get_redirect_target() const
 {
 	return redirect_target_;
 }
+
 int Route::get_allowed_methods() const
 {
 	return allowed_methods_;

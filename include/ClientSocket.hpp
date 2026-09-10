@@ -6,7 +6,9 @@
 #include <string>
 
 #include "HttpRequest.hpp"
+#include "Server.hpp"
 #include "Socket.hpp"
+#include "Router.hpp"
 
 class ClientSocket
 {
@@ -18,7 +20,7 @@ public:
 	};
 	~ClientSocket();
 
-	ClientSocket(int fd);
+	ClientSocket(int fd, const Server* server);
 
 	short get_ready_events() const;
 
@@ -49,6 +51,7 @@ private:
 	HttpRequest request;
 	std::string::size_type partial_write;
 	State state_client;
+	const Server* server_;
 };
 
 #endif	// CLIENT_SOCKET_HPP

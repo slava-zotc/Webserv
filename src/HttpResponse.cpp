@@ -10,6 +10,28 @@ HttpResponse::HttpResponse(int status_code)
 {
 }
 
+HttpResponse::HttpResponse(const HttpResponse& src)
+	: status_code_(src.status_code_),
+	  reason_phrase_(src.reason_phrase_),
+	  headers_(src.headers_),
+	  body_(src.body_),
+	  http_version_(src.http_version_)
+{
+}
+
+HttpResponse& HttpResponse::operator=(const HttpResponse& rhs)
+{
+	if (this != &rhs)
+	{
+		status_code_ = rhs.status_code_;
+		reason_phrase_ = rhs.reason_phrase_;
+		headers_ = rhs.headers_;
+		body_ = rhs.body_;
+		http_version_ = rhs.http_version_;
+	}
+	return (*this);
+}
+
 std::string HttpResponse::get_reason_phrase(int status_code)
 {
 	switch (status_code)

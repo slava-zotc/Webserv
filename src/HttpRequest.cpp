@@ -140,3 +140,19 @@ HttpRequest::ParsingState HttpRequest::get_parsing_state() const
 HttpRequest::~HttpRequest(void)
 {
 }
+
+const std::string& HttpRequest::get_path() const{
+	return path_;
+}
+const std::string& HttpRequest::get_version() const{
+	return version_;
+}
+const std::string& HttpRequest::get_body() const
+{
+	return body_;
+}
+
+HttpRequest::Methods HttpRequest::get_method() const
+{
+	return method_;
+}

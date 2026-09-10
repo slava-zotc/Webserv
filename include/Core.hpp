@@ -4,11 +4,13 @@
 #include <poll.h>
 #include <signal.h>
 
+#include <iostream>
 #include <map>
 #include <vector>
 
 #include "ClientSocket.hpp"
 #include "ListeningSocket.hpp"
+#include "Server.hpp"
 
 /**
  * @class Core
@@ -21,12 +23,9 @@
 class Core
 {
 public:
-	/**
-	 * @brief Конструктор. Инициализирует сервер и начинает слушать на порте.
-	 * @param port Номер порта для прослушивания
-	 */
-	Core(int port);
 
+
+	Core(std::vector<Server*>& servers);
 	/**
 	 * @brief Главный event loop сервера.
 	 * Обрабатывает входящие соединения, чтение/запись данных, закрытие
@@ -46,6 +45,12 @@ public:
 
 private:
 	/**
+	 * @brief Конструктор. Инициализирует сервер и начинает слушать на порте.
+	 * @param port Номер порта для прослушивания
+	 */
+	Core(int port);
+
+	/**
 	 * @brief Приватный конструктор по умолчанию (запрещён)
 	 */
 	Core();
@@ -60,6 +65,8 @@ private:
 	 */
 	std::map<int, ListeningSocket*> listening_sockets;
 
+	std::map<int, Server*> server_for_listening_fd;
+	
 	/**
 	 * @brief Массив структур pollfd для poll()
 	 */

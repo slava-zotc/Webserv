@@ -10,8 +10,8 @@
  *
  * Инициализирует клиентское соединение в начальном состоянии (READ_HEADERS).
  */
-ClientSocket::ClientSocket(int fd)
-	: socket_fd(fd), partial_write(0), state_client(READING)
+ClientSocket::ClientSocket(int fd, const Server* server)
+	: socket_fd(fd), partial_write(0), state_client(READING), server_(server)
 {
 }
 
@@ -74,8 +74,7 @@ void ClientSocket::handle_read()
 	// Временно до роутера
 	if (request.get_parsing_state() == HttpRequest::PARSING_DONE)
 	{
-		HttpResponse response(200);
-		response.set_body("Hello, World!");
+		HttpResponse response = Router::handle_request(request, *server_);
 		response_buffer = response.serialize();
 	}
 	else if (request.get_parsing_state() == HttpRequest::PARSING_ERROR)

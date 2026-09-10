@@ -11,6 +11,8 @@ public:
 	std::string serialize() const;
 	void set_header(const std::string& key, const std::string& value);
 	void set_body(const std::string& body);
+	HttpResponse(const HttpResponse& src);
+	HttpResponse& operator=(const HttpResponse& rhs);
 	~HttpResponse();
 
 private:
@@ -22,7 +24,5 @@ private:
 
 	std::string get_reason_phrase(int status_code);
 	HttpResponse();
-	HttpResponse(const HttpResponse& src);
-	HttpResponse& operator=(const HttpResponse& rhs);
 };
 #endif	// !HTTP_RESPONSE
