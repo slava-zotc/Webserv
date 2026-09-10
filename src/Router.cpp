@@ -1,6 +1,8 @@
 #include "Router.hpp"
 
 #include <cstdio>
+#include <dirent.h>
+#include <sstream>
 
 std::string Router::resolve_path(const std::string& path, const Route& route)
 {
@@ -39,7 +41,7 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 			return HttpResponse(405);
 
 		std::string path = resolve_path(request.get_path(), *route);
-		return handle_get_method(path);
+		return handle_get_method(path, request.get_path(), *route);
 	}
 
 	if (request.get_method() == HttpRequest::POST)
@@ -88,27 +90,20 @@ std::string Router::get_content_type(const std::string& path)
 	return "application/octet-stream";
 }
 
-HttpResponse Router::handle_get_method(const std::string& resolve_path, const Route &route)
+std::string Router::join_path(const std::string& base, const std::string& name)
 {
-	HttpResponse result(200);
+	if (!base.empty() && base[base.size() - 1] == '/') return base + name;
+	return base + "/" + name;
+}
 
+HttpResponse Router::read_file_response(const std::string& file_path)
+{
 	struct stat file_stat;
 
-	if (stat(resolve_path.c_str(), &file_stat) == -1) return HttpResponse(404);
+	if (stat(file_path.c_str(), &file_stat) == -1) return HttpResponse(404);
 
-	if (S_ISDIR(file_stat.st_mode))
-	{
-		if (!route.get_autoindex())
-			return HttpResponse(404);
-		resolve_path + route.get_index_file();  // вернутся кога буду реализовывать autoindex
-	}
-
-	int fd = open(resolve_path.c_str(), O_RDONLY);
-	if (fd == -1)
-	{
-		// подумать как должна реагировать
-		return HttpResponse(500);
-	}
+	int fd = open(file_path.c_str(), O_RDONLY);
+	if (fd == -1) return HttpResponse(500);
 
 	size_t total_read = 0;
 	std::string::size_type total_size =
@@ -127,13 +122,75 @@ HttpResponse Router::handle_get_method(const std::string& resolve_path, const Ro
 		}
 		total_read += tmp_read_byte;
 	}
-
-	result.set_body(body);
-
-	result.set_header("Content-Type", get_content_type(resolve_path));
-
 	close(fd);
+
+	HttpResponse result(200);
+	result.set_body(body);
+	result.set_header("Content-Type", get_content_type(file_path));
 	return result;
+}
+
+HttpResponse Router::generate_autoindex(const std::string& dir_path,
+										 const std::string& url_path)
+{
+	DIR* dir = opendir(dir_path.c_str());
+	if (dir == NULL) return HttpResponse(500);
+
+	// Ссылки в листинге должны указывать на URL, а не на путь в
+	// файловой системе — url_path гарантированно заканчивается на '/',
+	// потому что мы вызываем это только когда запрос указывает на директорию.
+	std::string url = url_path;
+	if (url.empty() || url[url.size() - 1] != '/') url += "/";
+
+	std::stringstream html;
+	html << "<html><head><title>Index of " << url << "</title></head><body>";
+	html << "<h1>Index of " << url << "</h1><ul>";
+
+	struct dirent* entry;
+	while ((entry = readdir(dir)) != NULL)
+	{
+		std::string name = entry->d_name;
+		if (name == ".") continue;  // "." — сама директория, смысла нет
+		html << "<li><a href=\"" << url << name << "\">" << name
+			 << "</a></li>";
+	}
+	closedir(dir);
+
+	html << "</ul></body></html>";
+
+	HttpResponse result(200);
+	result.set_body(html.str());
+	result.set_header("Content-Type", "text/html");
+	return result;
+}
+
+HttpResponse Router::handle_get_method(const std::string& resolve_path,
+										const std::string& url_path,
+										const Route& route)
+{
+	struct stat file_stat;
+
+	if (stat(resolve_path.c_str(), &file_stat) == -1) return HttpResponse(404);
+
+	if (S_ISDIR(file_stat.st_mode))
+	{
+		// Шаг 1: пробуем index_file_ внутри директории.
+		std::string index_path = join_path(resolve_path, route.get_index_file());
+		struct stat index_stat;
+
+		if (stat(index_path.c_str(), &index_stat) == 0
+			&& S_ISREG(index_stat.st_mode))
+			return read_file_response(index_path);
+
+		// Шаг 2: index_file_ не найден — смотрим на autoindex_.
+		if (route.get_autoindex())
+			return generate_autoindex(resolve_path, url_path);
+
+		// autoindex выключен, индекса нет — намеренно отказываем.
+		return HttpResponse(403);
+	}
+
+	return read_file_response(resolve_path);
 }
 
 HttpResponse Router::handle_post_method(const std::string& upload_path,

@@ -31,6 +31,9 @@
 		}
 		ul { padding-left: 1.2rem; }
 		li { margin: 0.3rem 0; }
+		a { color: #4ec9b0; text-decoration: none; }
+		a:hover { text-decoration: underline; }
+		a:visited { color: #4ec9b0; }
 	</style>
 </head>
 <body>
@@ -40,10 +43,10 @@
 		<p>resolve_path + Content-Type: text/html</p>
 		<p>Ручные сценарии для этой страницы:</p>
 		<ul>
-			<li><code>GET /</code> &rarr; должен отдать этот файл (200)</li>
-			<li><code>GET /about/</code> &rarr; должен отдать <code>about/index.html</code> (200)</li>
-			<li><code>GET /empty/</code> &rarr; index_file_ отсутствует, autoindex выключен &rarr; ожидаем 403 или 404 (смотря что решишь)</li>
-			<li><code>GET /nonexistent.html</code> &rarr; 404</li>
+			<li><a href="/"><code>GET /</code></a> &rarr; должен отдать этот файл (200)</li>
+			<li><a href="/about/"><code>GET /about/</code></a> &rarr; должен отдать <code>about/index.html</code> (200)</li>
+			<li><a href="/empty/"><code>GET /empty/</code></a> &rarr; index_file_ отсутствует, autoindex выключен &rarr; ожидаем 403 или 404 (смотря что решишь)</li>
+			<li><a href="/nonexistent.html"><code>GET /nonexistent.html</code></a> &rarr; 404</li>
 		</ul>
 	</div>
 </body>
