@@ -18,6 +18,8 @@ int main()
 		cfg_route.has_redirect_ = false;
 		cfg_route.redirect_target_ = "";
 		cfg_route.allowed_methods_ = Route::GET | Route::POST | Route::DELETE;
+		cfg_route.upload_enabled_ = true;
+		cfg_route.upload_dir_ = "/home/dev/dev/projects/WebServ/www/uploads";
 
 		std::vector<Route> routes;
 		routes.push_back(Route(cfg_route));

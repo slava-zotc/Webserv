@@ -13,6 +13,19 @@
 #include "Server.hpp"
 
 /**
+ * @struct ClientConnection
+ * @brief Связывает клиентский сокет с сервером, к которому он подключился.
+ *
+ * Core — единственное место, которое знает, какому Server принадлежит
+ * тот или иной клиент. ClientSocket сам по себе про Server ничего не знает.
+ */
+struct ClientConnection
+{
+	ClientSocket* socket;
+	const Server* server;
+};
+
+/**
  * @class Core
  * @brief Главный event loop сервера.
  *
@@ -56,9 +69,9 @@ private:
 	Core();
 
 	/**
-	 * @brief Карта активных клиентских соединений (fd -> ClientSocket*)
+	 * @brief Карта активных клиентских соединений (fd -> ClientConnection)
 	 */
-	std::map<int, ClientSocket*> client_sockets;
+	std::map<int, ClientConnection> client_sockets;
 
 	/**
 	 * @brief Карта слушающих сокетов (fd -> ListeningSocket*)

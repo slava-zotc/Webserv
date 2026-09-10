@@ -12,7 +12,7 @@
 			flex-direction: column;
 			align-items: center;
 			justify-content: center;
-			height: 100vh;
+			min-height: 100vh;
 			margin: 0;
 		}
 		h1 { color: #4ec9b0; }
@@ -21,14 +21,30 @@
 			border: 1px solid #4ec9b0;
 			padding: 2rem;
 			border-radius: 8px;
+			max-width: 32rem;
 		}
+		code {
+			background: #2d2d2d;
+			padding: 0.1rem 0.4rem;
+			border-radius: 4px;
+			color: #ce9178;
+		}
+		ul { padding-left: 1.2rem; }
+		li { margin: 0.3rem 0; }
 	</style>
 </head>
 <body>
 	<div class="box">
 		<h1>webserv works</h1>
-		<p>GET /index.html &rarr; 200 OK</p>
+		<p><code>GET /</code> &rarr; 200 OK (index_file_ resolved from directory)</p>
 		<p>resolve_path + Content-Type: text/html</p>
+		<p>Ручные сценарии для этой страницы:</p>
+		<ul>
+			<li><code>GET /</code> &rarr; должен отдать этот файл (200)</li>
+			<li><code>GET /about/</code> &rarr; должен отдать <code>about/index.html</code> (200)</li>
+			<li><code>GET /empty/</code> &rarr; index_file_ отсутствует, autoindex выключен &rarr; ожидаем 403 или 404 (смотря что решишь)</li>
+			<li><code>GET /nonexistent.html</code> &rarr; 404</li>
+		</ul>
 	</div>
 </body>
 </html>

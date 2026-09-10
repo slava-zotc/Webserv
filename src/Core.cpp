@@ -93,11 +93,11 @@ void Core::core_loop()
 		}
 		// Добавляем в poll() все активные клиентские соединения
 		// События зависят от состояния обработки (чтение, запись)
-		for (std::map<int, ClientSocket*>::iterator it = client_sockets.begin();
+		for (std::map<int, ClientConnection>::iterator it = client_sockets.begin();
 			 it != client_sockets.end(); it++)
 		{
-			short want_events =
-				translate_client_mask_in_posix(it->second->get_ready_events());
+			short want_events = translate_client_mask_in_posix(
+				it->second.socket->get_ready_events());
 			tmp_pollfd.fd = it->first;
 			tmp_pollfd.events = want_events;
 			fds.push_back(tmp_pollfd);
@@ -131,40 +131,43 @@ void Core::core_loop()
 					int client_fd = it_listening->second->accept_conection();
 					if (client_fd != -1)
 					{
-						Server* server = server_for_listening_fd[fds[i].fd];
-						client_sockets[client_fd] = new ClientSocket(client_fd, server);
+						ClientConnection conn;
+						conn.socket = new ClientSocket(client_fd);
+						conn.server = server_for_listening_fd[fds[i].fd];
+						client_sockets[client_fd] = conn;
 					}
 				}
 				// Это клиентский сокет - чтение данных
 				else
 				{
-					std::map<int, ClientSocket*>::iterator it_client =
+					std::map<int, ClientConnection>::iterator it_client =
 						client_sockets.find(fds[i].fd);
 
 					if (it_client != client_sockets.end())
 					{
-						it_client->second->handle_read();
+						it_client->second.socket->handle_read(
+							*(it_client->second.server));
 					}
 				}
 			}
 			// Событие записи - отправка данных клиенту
 			if (fds[i].revents & POLLOUT)
 			{
-				std::map<int, ClientSocket*>::iterator it_client =
+				std::map<int, ClientConnection>::iterator it_client =
 					client_sockets.find(fds[i].fd);
 
 				if (it_client != client_sockets.end())
 				{
-					if (!it_client->second->is_ready_delete())
-						it_client->second->handle_write();
+					if (!it_client->second.socket->is_ready_delete())
+						it_client->second.socket->handle_write();
 				}
 			}
 		}
 		// Находим готовые к удалению клиентские соединения
-		for (std::map<int, ClientSocket*>::iterator it = client_sockets.begin();
+		for (std::map<int, ClientConnection>::iterator it = client_sockets.begin();
 			 it != client_sockets.end(); it++)
 		{
-			if (it->second->is_ready_delete())
+			if (it->second.socket->is_ready_delete())
 				delete_client.push_back(it->first);
 		}
 
@@ -172,7 +175,7 @@ void Core::core_loop()
 		for (size_t i = 0; i < delete_client.size(); i++)
 		{
 			int fd_client_delete = delete_client[i];
-			delete client_sockets[fd_client_delete];
+			delete client_sockets[fd_client_delete].socket;
 			client_sockets.erase(fd_client_delete);
 		}
 	}
@@ -194,9 +197,9 @@ Core::~Core(void)
 		delete it->second;
 	}
 	// Удаляем все клиентские соединения
-	for (std::map<int, ClientSocket*>::iterator it = client_sockets.begin();
+	for (std::map<int, ClientConnection>::iterator it = client_sockets.begin();
 		 it != client_sockets.end(); it++)
 	{
-		delete it->second;
+		delete it->second.socket;
 	}
 }

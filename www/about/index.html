@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+	<meta charset="UTF-8">
+	<title>Webserv Test Page — /about/</title>
+	<style>
+		body {
+			font-family: monospace;
+			background-color: #1e1e1e;
+			color: #d4d4d4;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			min-height: 100vh;
+			margin: 0;
+		}
+		h1 { color: #dcdcaa; }
+		p { color: #9cdcfe; }
+		.box {
+			border: 1px solid #dcdcaa;
+			padding: 2rem;
+			border-radius: 8px;
+			max-width: 32rem;
+		}
+		code {
+			background: #2d2d2d;
+			padding: 0.1rem 0.4rem;
+			border-radius: 4px;
+			color: #ce9178;
+		}
+	</style>
+</head>
+<body>
+	<div class="box">
+		<h1>/about/index.html</h1>
+		<p><code>GET /about/</code> &rarr; 200 OK</p>
+		<p>Проверяет resolve_path с вложенной директорией: <code>root + "/about/" + index_file_</code>, а не только корень.</p>
+	</div>
+</body>
+</html>

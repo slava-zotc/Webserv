@@ -14,9 +14,14 @@ public:
 											 const Server& server);
 	static const Route* matching(const std::string& path,
 								 const std::vector<Route>& route);
-	static HttpResponse handle_get_method(const std::string& resolve_path);
+	static HttpResponse handle_get_method(const std::string& resolve_path, const Route &route);
+	static HttpResponse handle_post_method(const std::string& upload_path,
+											const std::string& body);
+	static HttpResponse handle_delete_method(const std::string& resolve_path);
 	static std::string resolve_path(const std::string& path,
 									const Route& route);
+	static std::string resolve_upload_path(const std::string& path,
+											const Route& route);
 
 private:
 	static std::string get_content_type(const std::string& path);

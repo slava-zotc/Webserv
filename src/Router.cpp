@@ -1,5 +1,7 @@
 #include "Router.hpp"
 
+#include <cstdio>
+
 std::string Router::resolve_path(const std::string& path, const Route& route)
 {
 	std::string tail = path.substr(route.get_prefix().length());
@@ -8,6 +10,17 @@ std::string Router::resolve_path(const std::string& path, const Route& route)
 
 	std::string resolve_path = route.get_root() + "/" + tail;
 	return resolve_path;
+}
+
+std::string Router::resolve_upload_path(const std::string& path,
+										 const Route& route)
+{
+	std::string tail = path.substr(route.get_prefix().length());
+
+	if (!tail.empty() && tail[0] == '/') tail.erase(0, 1);
+
+	std::string upload_path = route.get_upload_dir() + "/" + tail;
+	return upload_path;
 }
 
 const HttpResponse Router::handle_request(const HttpRequest& request,
@@ -22,12 +35,31 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 
 	if (request.get_method() == HttpRequest::GET)
 	{
-		if (route->get_allowed_methods() & Route::GET)
-		{
-			std::string path = resolve_path(request.get_path(), *route);
-			HttpResponse result = handle_get_method(path);
-			return result;
-		}
+		if (!(route->get_allowed_methods() & Route::GET))
+			return HttpResponse(405);
+
+		std::string path = resolve_path(request.get_path(), *route);
+		return handle_get_method(path);
+	}
+
+	if (request.get_method() == HttpRequest::POST)
+	{
+		if (!(route->get_allowed_methods() & Route::POST))
+			return HttpResponse(405);
+		if (!route->get_upload_enabled())
+			return HttpResponse(403);
+
+		std::string path = resolve_upload_path(request.get_path(), *route);
+		return handle_post_method(path, request.get_body());
+	}
+
+	if (request.get_method() == HttpRequest::DELETE)
+	{
+		if (!(route->get_allowed_methods() & Route::DELETE))
+			return HttpResponse(405);
+
+		std::string path = resolve_path(request.get_path(), *route);
+		return handle_delete_method(path);
 	}
 
 	return HttpResponse(405);
@@ -56,7 +88,7 @@ std::string Router::get_content_type(const std::string& path)
 	return "application/octet-stream";
 }
 
-HttpResponse Router::handle_get_method(const std::string& resolve_path)
+HttpResponse Router::handle_get_method(const std::string& resolve_path, const Route &route)
 {
 	HttpResponse result(200);
 
@@ -65,7 +97,11 @@ HttpResponse Router::handle_get_method(const std::string& resolve_path)
 	if (stat(resolve_path.c_str(), &file_stat) == -1) return HttpResponse(404);
 
 	if (S_ISDIR(file_stat.st_mode))
-		return HttpResponse(404);  // вернутся кога буду реализовывать autoindex
+	{
+		if (!route.get_autoindex())
+			return HttpResponse(404);
+		resolve_path + route.get_index_file();  // вернутся кога буду реализовывать autoindex
+	}
 
 	int fd = open(resolve_path.c_str(), O_RDONLY);
 	if (fd == -1)
@@ -98,6 +134,42 @@ HttpResponse Router::handle_get_method(const std::string& resolve_path)
 
 	close(fd);
 	return result;
+}
+
+HttpResponse Router::handle_post_method(const std::string& upload_path,
+										 const std::string& body)
+{
+	int fd = open(upload_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	if (fd == -1) return HttpResponse(500);
+
+	size_t total_written = 0;
+	while (total_written < body.size())
+	{
+		int tmp_write_byte =
+			write(fd, body.c_str() + total_written, body.size() - total_written);
+		if (tmp_write_byte == -1)
+		{
+			close(fd);
+			return HttpResponse(500);
+		}
+		total_written += tmp_write_byte;
+	}
+	close(fd);
+
+	return HttpResponse(201);
+}
+
+HttpResponse Router::handle_delete_method(const std::string& resolve_path)
+{
+	struct stat file_stat;
+
+	if (stat(resolve_path.c_str(), &file_stat) == -1) return HttpResponse(404);
+
+	if (S_ISDIR(file_stat.st_mode)) return HttpResponse(409);
+
+	if (std::remove(resolve_path.c_str()) == -1) return HttpResponse(500);
+
+	return HttpResponse(204);
 }
 
 const Route* Router::matching(const std::string& path,

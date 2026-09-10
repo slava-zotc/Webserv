@@ -4,14 +4,16 @@
 
 #include "HttpRequest.hpp"
 #include "HttpResponse.hpp"
+#include "Router.hpp"
+#include "Server.hpp"
 /**
  * @brief Конструктор ClientSocket
  * @param fd Файловый дескриптор клиентского сокета
  *
  * Инициализирует клиентское соединение в начальном состоянии (READ_HEADERS).
  */
-ClientSocket::ClientSocket(int fd, const Server* server)
-	: socket_fd(fd), partial_write(0), state_client(READING), server_(server)
+ClientSocket::ClientSocket(int fd)
+	: socket_fd(fd), partial_write(0), state_client(READING)
 {
 }
 
@@ -53,11 +55,12 @@ bool ClientSocket::is_ready_delete() const
 }
 /**
  * @brief Обрабатывает получение данных от клиента
+ * @param server Сервер, к которому подключён этот клиент (сообщает Core)
  *
- * Читает данные из сокета, примец ресурс и генерирует HTTP ответ.
- * В актуальной имплементации ответ - это постоянная строка "Hello, World!".
+ * Читает данные из сокета, передаёт разобранный запрос в Router
+ * и сериализует полученный HttpResponse в буфер на отправку.
  */
-void ClientSocket::handle_read()
+void ClientSocket::handle_read(const Server& server)
 {
 	char tmp_buffer[4096];
 
@@ -71,10 +74,9 @@ void ClientSocket::handle_read()
 	std::string recv_string(tmp_buffer, byte_recv);
 	// Скопируем данные в буфер ресурс
 	request.parse(recv_string);
-	// Временно до роутера
 	if (request.get_parsing_state() == HttpRequest::PARSING_DONE)
 	{
-		HttpResponse response = Router::handle_request(request, *server_);
+		HttpResponse response = Router::handle_request(request, server);
 		response_buffer = response.serialize();
 	}
 	else if (request.get_parsing_state() == HttpRequest::PARSING_ERROR)
@@ -84,7 +86,6 @@ void ClientSocket::handle_read()
 	}
 	else
 		return;
-	// На данный момент генерируем тривиальный HTTP ответ
 	state_client = READY_SEND;	// Переводим в режим отправки
 }
 /**

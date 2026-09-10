@@ -12,6 +12,8 @@ struct CFG_Route
 	bool has_redirect_;
 	std::string redirect_target_;
 	int allowed_methods_;
+	bool upload_enabled_;
+	std::string upload_dir_;
 };
 
 
@@ -35,6 +37,8 @@ public:
 	bool get_autoindex() const;
 	bool get_has_redirect() const;
 	int get_allowed_methods() const;
+	bool get_upload_enabled() const;
+	const std::string& get_upload_dir() const;
 	Route(const Route& src);
 	Route& operator=(const Route& rhs);
 
@@ -46,6 +50,8 @@ private:
 	bool has_redirect_;
 	std::string redirect_target_;
 	int allowed_methods_;
+	bool upload_enabled_;
+	std::string upload_dir_;
 	Route();
 };
 #endif
