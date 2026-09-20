@@ -25,7 +25,7 @@ import threading
 
 HOST = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
-NUM_CLIENTS = int(sys.argv[3]) if len(sys.argv) > 3 else 5000
+NUM_CLIENTS = int(sys.argv[3]) if len(sys.argv) > 3 else 500000
 
 REQUEST = (
     "GET / HTTP/1.1\r\n"

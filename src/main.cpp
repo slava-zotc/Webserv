@@ -13,7 +13,7 @@ int main()
 		CFG_Route cfg_route;
 		cfg_route.prefix_ = "/";
 		cfg_route.root_ = "/home/dev/dev/projects/WebServ/www";
-		cfg_route.autoindex_ = false;
+		cfg_route.autoindex_ = true;
 		cfg_route.index_file_ = "index.html";
 		cfg_route.has_redirect_ = false;
 		cfg_route.redirect_target_ = "";

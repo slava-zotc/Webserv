@@ -101,6 +101,11 @@ private:
 	 * @return Маска для poll() (POLLIN, POLLOUT)
 	 */
 	short translate_client_mask_in_posix(short mask);
+
+	void fill_pollfds();
+	int accept_new_client(int indx);
+	void dispatch_client_events(short revents, int fd);
+	void cleanup_closed_connections();
 };
 
 #endif	// CORE_HPP
