@@ -2,6 +2,9 @@
 
 #include <sys/socket.h>
 
+#include <exception>
+#include <iostream>
+
 #include "HttpRequest.hpp"
 #include "HttpResponse.hpp"
 #include "Router.hpp"
@@ -72,20 +75,43 @@ void ClientSocket::handle_read(const Server& server)
 		return;
 	}
 	std::string recv_string(tmp_buffer, byte_recv);
-	// Скопируем данные в буфер ресурс
-	request.parse(recv_string);
-	if (request.get_parsing_state() == HttpRequest::PARSING_DONE)
+	try
 	{
-		HttpResponse response = Router::handle_request(request, server);
+		// Скопируем данные в буфер ресурс
+		request.parse(recv_string);
+		if (request.get_parsing_state() == HttpRequest::PARSING_DONE)
+		{
+			HttpResponse response = Router::handle_request(request, server);
+			response_buffer = response.serialize();
+		}
+		else if (request.get_parsing_state() == HttpRequest::PARSING_ERROR)
+		{
+			HttpResponse response(400);
+			response_buffer = response.serialize();
+		}
+		else
+			return;
+	}
+	// Исключение при разборе запроса или его обработке (например,
+	// std::bad_alloc/std::length_error на аномально большом теле) не должно
+	// убивать весь процесс — гасим его здесь и закрываем только это
+	// соединение, остальные клиенты не затрагиваются.
+	catch (const std::exception& e)
+	{
+		std::cerr << "[ClientSocket] fd=" << socket_fd.get_fd()
+				  << ": exception while handling request: " << e.what()
+				  << " -- closing this connection with 500" << std::endl;
+		HttpResponse response(500);
 		response_buffer = response.serialize();
 	}
-	else if (request.get_parsing_state() == HttpRequest::PARSING_ERROR)
+	catch (...)
 	{
-		HttpResponse response(400);
+		std::cerr << "[ClientSocket] fd=" << socket_fd.get_fd()
+				  << ": unknown exception while handling request"
+				  << " -- closing this connection with 500" << std::endl;
+		HttpResponse response(500);
 		response_buffer = response.serialize();
 	}
-	else
-		return;
 	state_client = READY_SEND;	// Переводим в режим отправки
 }
 /**

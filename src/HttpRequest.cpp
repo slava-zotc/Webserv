@@ -2,8 +2,14 @@
 
 #include <algorithm>
 #include <cctype>
+#include <iostream>
 #include <sstream>
 #include <string>
+
+// Жёсткий потолок для Content-Length, независимый от конфигурации сервера
+// (которая пока не enforced): не даёт клиенту заставить сервер выделить
+// std::string произвольного размера через body_.append(...) в parse().
+static const size_t MAX_CONTENT_LENGTH = 10 * 1024 * 1024;  // 10 MiB
 
 HttpRequest::HttpRequest(void)
 	: method_(UNKNOWN), parsing_state_(PARSING_START), content_length_(0)
@@ -47,6 +53,14 @@ void HttpRequest::process_header_line(const std::string& line)
 				return;
 			}
 			content_length_ = static_cast<size_t>(tmp_content_length);
+			if (content_length_ > MAX_CONTENT_LENGTH)
+			{
+				std::cerr << "[HttpRequest] Content-Length " << content_length_
+						  << " exceeds limit " << MAX_CONTENT_LENGTH
+						  << " -- rejecting request with 400" << std::endl;
+				parsing_state_ = PARSING_ERROR;
+				return;
+			}
 			if (content_length_ > 0)
 				parsing_state_ = PARSING_BODY;
 			else

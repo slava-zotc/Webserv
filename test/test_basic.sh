@@ -147,7 +147,30 @@ else
 fi
 echo ""
 
-section "Тест 8: сервер всё ещё жив после всех тестов"
+section "Тест 8: Content-Length больше лимита (10 MiB) -> ожидаем 400, сервер не падает"
+# Регрессионный тест на баг, где отсутствие потолка для Content-Length
+# в HttpRequest могло привести к неограниченному росту буфера тела запроса.
+# Заголовок с Content-Length больше лимита должен быть отклонён сразу после
+# разбора заголовков (до чтения тела) — тело реально отправлять не нужно.
+RAW_RESPONSE_BIG_CL=$(printf 'GET / HTTP/1.1\r\nHost: %s\r\nContent-Length: 999999999\r\n\r\n' "$HOST" |
+  nc -w 2 "$HOST" "$PORT")
+STATUS_LINE_BIG_CL=$(echo "$RAW_RESPONSE_BIG_CL" | head -n 1)
+if echo "$STATUS_LINE_BIG_CL" | grep -q "400"; then
+  check_pass "Content-Length сверх лимита вернул 400 ($STATUS_LINE_BIG_CL)"
+else
+  check_fail "Content-Length сверх лимита вернул '$STATUS_LINE_BIG_CL', ожидался 400"
+fi
+
+sleep 0.3
+RESPONSE_AFTER_BIG_CL=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://${HOST}:${PORT}/")
+if [ -n "$RESPONSE_AFTER_BIG_CL" ]; then
+  check_pass "Сервер пережил запрос со слишком большим Content-Length и отвечает ($RESPONSE_AFTER_BIG_CL)"
+else
+  check_fail "После запроса со слишком большим Content-Length сервер не отвечает — возможно, упал"
+fi
+echo ""
+
+section "Тест 9: сервер всё ещё жив после всех тестов"
 FINAL_CHECK=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://${HOST}:${PORT}/")
 if [ "$FINAL_CHECK" = "200" ]; then
   check_pass "Сервер жив после всех тестов"
