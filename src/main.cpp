@@ -12,14 +12,14 @@ int main()
 	{
 		CFG_Route cfg_route;
 		cfg_route.prefix_ = "/";
-		cfg_route.root_ = "/home/dev/dev/projects/WebServ/www";
+		cfg_route.root_ = "/home/slava/Projects/Webserv/www";
 		cfg_route.autoindex_ = true;
 		cfg_route.index_file_ = "index.html";
 		cfg_route.has_redirect_ = false;
 		cfg_route.redirect_target_ = "";
 		cfg_route.allowed_methods_ = Route::GET | Route::POST | Route::DELETE;
 		cfg_route.upload_enabled_ = true;
-		cfg_route.upload_dir_ = "/home/dev/dev/projects/WebServ/www/uploads";
+		cfg_route.upload_dir_ = "/home/slava/Projects/Webserv/www/uploads";
 
 		std::vector<Route> routes;
 		routes.push_back(Route(cfg_route));
