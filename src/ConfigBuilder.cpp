@@ -100,9 +100,17 @@ CFG_Route buildCfgRoute(const ConfigBlock& block, const std::string& parentRoot)
 CFG_Server buildCfgServer(const ConfigBlock& block) {
     CFG_Server cfg = CFG_Server();
 
-    cfg.port_ = parsePort(block.directives.at("listen")[0]);
+    const std::vector<std::string>& listenValues = block.directives.at("listen");
+    if (listenValues.empty()) {
+        throw std::runtime_error("Empty listen directive");
+    }
+    cfg.port_ = parsePort(listenValues[0]);
 
-    std::string root = block.directives.at("root")[0];
+    const std::vector<std::string>& rootValues = block.directives.at("root");
+    if (rootValues.empty()) {
+        throw std::runtime_error("Empty root directive");
+    }
+    std::string root = rootValues[0];
     validateRoot(root);
 
     cfg.max_body_size_ = 1048576;
