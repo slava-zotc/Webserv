@@ -77,7 +77,9 @@ void ClientSocket::handle_read(const Server& server)
 	std::string recv_string(tmp_buffer, byte_recv);
 	try
 	{
-		// Скопируем данные в буфер ресурс
+		// Лимит тела запроса — из конфига конкретного сервера, а не
+		// глобальная константа.
+		request.set_max_body_size(server.get_max_body_size());
 		request.parse(recv_string);
 		if (request.get_parsing_state() == HttpRequest::PARSING_DONE)
 		{
@@ -86,7 +88,8 @@ void ClientSocket::handle_read(const Server& server)
 		}
 		else if (request.get_parsing_state() == HttpRequest::PARSING_ERROR)
 		{
-			HttpResponse response(400);
+			HttpResponse response = Router::apply_error_page(
+				HttpResponse(request.get_error_status()), server);
 			response_buffer = response.serialize();
 		}
 		else
@@ -101,7 +104,7 @@ void ClientSocket::handle_read(const Server& server)
 		std::cerr << "[ClientSocket] fd=" << socket_fd.get_fd()
 				  << ": exception while handling request: " << e.what()
 				  << " -- closing this connection with 500" << std::endl;
-		HttpResponse response(500);
+		HttpResponse response = Router::apply_error_page(HttpResponse(500), server);
 		response_buffer = response.serialize();
 	}
 	catch (...)
@@ -109,7 +112,7 @@ void ClientSocket::handle_read(const Server& server)
 		std::cerr << "[ClientSocket] fd=" << socket_fd.get_fd()
 				  << ": unknown exception while handling request"
 				  << " -- closing this connection with 500" << std::endl;
-		HttpResponse response(500);
+		HttpResponse response = Router::apply_error_page(HttpResponse(500), server);
 		response_buffer = response.serialize();
 	}
 	state_client = READY_SEND;	// Переводим в режим отправки

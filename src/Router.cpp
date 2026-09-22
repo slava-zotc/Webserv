@@ -29,42 +29,112 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 										  const Server& server)
 {
 	const Route* route = matching(request.get_path(), server.get_route());
+	HttpResponse response(404);
 
 	if (route == NULL)
 	{
-		return HttpResponse(404);
+		return apply_error_page(response, server);
 	}
-
-	if (request.get_method() == HttpRequest::GET)
+	else if (request.get_method() == HttpRequest::GET)
 	{
 		if (!(route->get_allowed_methods() & Route::GET))
-			return HttpResponse(405);
-
-		std::string path = resolve_path(request.get_path(), *route);
-		return handle_get_method(path, request.get_path(), *route);
+			response = HttpResponse(405);
+		else
+		{
+			std::string path = resolve_path(request.get_path(), *route);
+			response = handle_get_method(path, request.get_path(), *route);
+		}
 	}
-
-	if (request.get_method() == HttpRequest::POST)
+	else if (request.get_method() == HttpRequest::POST)
 	{
 		if (!(route->get_allowed_methods() & Route::POST))
-			return HttpResponse(405);
-		if (!route->get_upload_enabled())
-			return HttpResponse(403);
-
-		std::string path = resolve_upload_path(request.get_path(), *route);
-		return handle_post_method(path, request.get_body());
+			response = HttpResponse(405);
+		else if (!route->get_upload_enabled())
+			response = HttpResponse(403);
+		else
+		{
+			std::string path = resolve_upload_path(request.get_path(), *route);
+			response = handle_post_method(path, request.get_body());
+		}
 	}
-
-	if (request.get_method() == HttpRequest::DELETE)
+	else if (request.get_method() == HttpRequest::DELETE)
 	{
 		if (!(route->get_allowed_methods() & Route::DELETE))
-			return HttpResponse(405);
-
-		std::string path = resolve_path(request.get_path(), *route);
-		return handle_delete_method(path);
+			response = HttpResponse(405);
+		else
+		{
+			std::string path = resolve_path(request.get_path(), *route);
+			response = handle_delete_method(path);
+		}
+	}
+	else
+	{
+		response = HttpResponse(405);
 	}
 
-	return HttpResponse(405);
+	return apply_error_page(response, server);
+}
+
+std::string Router::default_error_body(const HttpResponse& response)
+{
+	std::stringstream html;
+	html << "<html><head><title>" << response.get_status_code() << " "
+		 << response.get_reason_phrase()
+		 << "</title></head><body><h1>" << response.get_status_code() << " "
+		 << response.get_reason_phrase() << "</h1></body></html>";
+	return html.str();
+}
+
+HttpResponse Router::apply_error_page(HttpResponse response,
+									   const Server& server)
+{
+	if (response.get_status_code() < 400 || !response.get_body().empty())
+		return response;
+
+	const std::map<int, std::string>& error_pages = server.get_error_pages();
+	std::map<int, std::string>::const_iterator it =
+		error_pages.find(response.get_status_code());
+
+	if (it != error_pages.end())
+	{
+		struct stat file_stat;
+		if (stat(it->second.c_str(), &file_stat) == 0
+			&& S_ISREG(file_stat.st_mode))
+		{
+			int fd = open(it->second.c_str(), O_RDONLY);
+			if (fd != -1)
+			{
+				std::string::size_type total_size =
+					static_cast<std::string::size_type>(file_stat.st_size);
+				std::string body(total_size, '\0');
+				size_t total_read = 0;
+				bool ok = true;
+
+				while (total_read < total_size)
+				{
+					int tmp_read_byte =
+						read(fd, &body[0] + total_read, total_size - total_read);
+					if (tmp_read_byte <= 0)
+					{
+						ok = false;
+						break;
+					}
+					total_read += tmp_read_byte;
+				}
+				close(fd);
+				if (ok)
+				{
+					response.set_body(body);
+					response.set_header("Content-Type", get_content_type(it->second));
+					return response;
+				}
+			}
+		}
+	}
+
+	response.set_body(default_error_body(response));
+	response.set_header("Content-Type", "text/html");
+	return response;
 }
 
 std::string Router::get_content_type(const std::string& path)

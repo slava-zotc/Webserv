@@ -6,14 +6,24 @@
 #include <sstream>
 #include <string>
 
-// Жёсткий потолок для Content-Length, независимый от конфигурации сервера
-// (которая пока не enforced): не даёт клиенту заставить сервер выделить
+// Дефолтный потолок для Content-Length, пока ClientSocket не вызвал
+// set_max_body_size() со значением client_max_body_size из конфига
+// конкретного сервера — не даёт клиенту заставить сервер выделить
 // std::string произвольного размера через body_.append(...) в parse().
-static const size_t MAX_CONTENT_LENGTH = 10 * 1024 * 1024;  // 10 MiB
+static const size_t DEFAULT_MAX_BODY_SIZE = 10 * 1024 * 1024;  // 10 MiB
 
 HttpRequest::HttpRequest(void)
-	: method_(UNKNOWN), parsing_state_(PARSING_START), content_length_(0)
+	: method_(UNKNOWN),
+	  parsing_state_(PARSING_START),
+	  content_length_(0),
+	  max_body_size_(DEFAULT_MAX_BODY_SIZE),
+	  error_status_(400)
 {
+}
+
+void HttpRequest::set_max_body_size(size_t max_body_size)
+{
+	max_body_size_ = max_body_size;
 }
 
 HttpRequest::Methods HttpRequest::convert_method_str(
@@ -53,11 +63,12 @@ void HttpRequest::process_header_line(const std::string& line)
 				return;
 			}
 			content_length_ = static_cast<size_t>(tmp_content_length);
-			if (content_length_ > MAX_CONTENT_LENGTH)
+			if (content_length_ > max_body_size_)
 			{
 				std::cerr << "[HttpRequest] Content-Length " << content_length_
-						  << " exceeds limit " << MAX_CONTENT_LENGTH
-						  << " -- rejecting request with 400" << std::endl;
+						  << " exceeds limit " << max_body_size_
+						  << " -- rejecting request with 413" << std::endl;
+				error_status_ = 413;
 				parsing_state_ = PARSING_ERROR;
 				return;
 			}
@@ -169,4 +180,9 @@ const std::string& HttpRequest::get_body() const
 HttpRequest::Methods HttpRequest::get_method() const
 {
 	return method_;
+}
+
+int HttpRequest::get_error_status() const
+{
+	return error_status_;
 }

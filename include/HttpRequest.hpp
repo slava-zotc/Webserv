@@ -25,12 +25,14 @@ public:
 
 	HttpRequest();
 	ParsingState parse(const std::string& data);
+	void set_max_body_size(size_t max_body_size);
 	const std::string& get_path() const;
 	const std::string& get_version() const;
 	const std::string& get_body() const;
 	const std::map<std::string, std::string>& get_headers() const;
 	Methods get_method() const;
 	ParsingState get_parsing_state() const;
+	int get_error_status() const;
 	~HttpRequest();
 
 private:
@@ -42,6 +44,8 @@ private:
 	std::string body_;
 	std::map<std::string, std::string> headers_;
 	size_t content_length_;
+	size_t max_body_size_;
+	int error_status_;
 
 	void process_start_line(const std::string& line);
 	Methods convert_method_str(const std::string& method_str);

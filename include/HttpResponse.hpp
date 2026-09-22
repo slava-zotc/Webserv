@@ -11,6 +11,9 @@ public:
 	std::string serialize() const;
 	void set_header(const std::string& key, const std::string& value);
 	void set_body(const std::string& body);
+	int get_status_code() const;
+	const std::string& get_body() const;
+	const std::string& get_reason_phrase() const;
 	HttpResponse(const HttpResponse& src);
 	HttpResponse& operator=(const HttpResponse& rhs);
 	~HttpResponse();

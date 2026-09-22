@@ -24,9 +24,20 @@ public:
 									const Route& route);
 	static std::string resolve_upload_path(const std::string& path,
 											const Route& route);
+	/**
+	 * @brief Для ответа с кодом ошибки (>=400) и ещё пустым телом
+	 * подставляет тело страницы ошибки: сперва пробует файл из
+	 * error_page конфига сервера для этого кода, если он есть и
+	 * читается; иначе — встроенную дефолтную HTML-страницу с кодом
+	 * и reason phrase. Ответы без ошибки или с уже заполненным телом
+	 * возвращаются как есть.
+	 */
+	static HttpResponse apply_error_page(HttpResponse response,
+										  const Server& server);
 
 private:
 	static std::string get_content_type(const std::string& path);
+	static std::string default_error_body(const HttpResponse& response);
 	/**
 	 * @brief Склеивает base и name ровно одним '/' между ними,
 	 * независимо от того, заканчивается ли base уже на '/'.

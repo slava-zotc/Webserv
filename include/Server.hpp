@@ -20,6 +20,8 @@ public:
 	~Server();
 	const std::vector<Route>& get_route() const;
 	int get_port() const;
+	unsigned long get_max_body_size() const;
+	const std::map<int, std::string>& get_error_pages() const;
 private:
 	int port;
 	unsigned long max_body_size_;

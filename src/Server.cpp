@@ -21,3 +21,13 @@ int Server::get_port() const
 {
 	return port;
 }
+
+unsigned long Server::get_max_body_size() const
+{
+	return max_body_size_;
+}
+
+const std::map<int, std::string>& Server::get_error_pages() const
+{
+	return error_pages_;
+}
