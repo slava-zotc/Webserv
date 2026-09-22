@@ -17,7 +17,9 @@ COMMON_SRCS = \
 	$(SRC_DIR)/HttpResponse.cpp \
 	$(SRC_DIR)/Route.cpp \
 	$(SRC_DIR)/Router.cpp \
-	$(SRC_DIR)/Server.cpp 
+	$(SRC_DIR)/Server.cpp \
+	$(SRC_DIR)/ConvigParser.cpp \
+	$(SRC_DIR)/ConfigBuilder.cpp
 
 SRCS = $(SRC_DIR)/main.cpp $(COMMON_SRCS)
 OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)

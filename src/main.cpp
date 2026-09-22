@@ -1,38 +1,81 @@
+#include <cctype>
 #include <exception>
+#include <fstream>
 #include <iostream>
+#include <sstream>
+#include <string>
 #include <vector>
 
+#include "ConfigBuilder.hpp"
+#include "ConfigParser.hpp"
 #include "Core.hpp"
 #include "Route.hpp"
 #include "Server.hpp"
 
-int main()
+static std::string readFile(const char* path) {
+	std::ifstream file(path);
+	if (!file.is_open()) {
+		throw std::runtime_error(std::string("Cannot open config file: ") + path);
+	}
+	std::stringstream ss;
+	ss << file.rdbuf();
+	return ss.str();
+}
+
+static std::vector<std::string> tokenize(const std::string& content) {
+	std::vector<std::string> tokens;
+	std::string current;
+
+	for (size_t i = 0; i < content.size(); ++i) {
+		char c = content[i];
+
+		if (c == '#') { // comment: skip to end of line
+			while (i < content.size() && content[i] != '\n') ++i;
+			continue;
+		}
+		if (c == '{' || c == '}' || c == ';') {
+			if (!current.empty()) { tokens.push_back(current); current.clear(); }
+			tokens.push_back(std::string(1, c));
+		} else if (std::isspace(static_cast<unsigned char>(c))) {
+			if (!current.empty()) { tokens.push_back(current); current.clear(); }
+		} else {
+			current += c;
+		}
+	}
+	if (!current.empty()) tokens.push_back(current);
+	return tokens;
+}
+
+int main(int argc, char** argv)
 {
+	if (argc != 2)
+	{
+		std::cerr << "Usage: " << argv[0] << " <config-file>" << std::endl;
+		return 1;
+	}
+
+	std::vector<Server*> servers;
 	try
 	{
-		CFG_Route cfg_route;
-		cfg_route.prefix_ = "/";
-		cfg_route.root_ = "/home/slava/Projects/Webserv/www";
-		cfg_route.autoindex_ = true;
-		cfg_route.index_file_ = "index.html";
-		cfg_route.has_redirect_ = false;
-		cfg_route.redirect_target_ = "";
-		cfg_route.allowed_methods_ = Route::GET | Route::POST | Route::DELETE;
-		cfg_route.upload_enabled_ = true;
-		cfg_route.upload_dir_ = "/home/slava/Projects/Webserv/www/uploads";
+		std::string content = readFile(argv[1]);
+		std::vector<std::string> tokens = tokenize(content);
 
-		std::vector<Route> routes;
-		routes.push_back(Route(cfg_route));
+		ConfigParser parser(tokens);
+		std::vector<ConfigBlock> blocks = parser.parse();
 
-		CFG_Server cfg_server;
-		cfg_server.port_ = 8080;
-		cfg_server.max_body_size_ = 1048576;
-		cfg_server.routes_ = routes;
+		for (size_t i = 0; i < blocks.size(); ++i)
+		{
+			if (blocks[i].name == "server")
+			{
+				CFG_Server cfg_server = buildCfgServer(blocks[i]);
+				servers.push_back(new Server(cfg_server));
+			}
+		}
 
-		Server server(cfg_server);
-
-		std::vector<Server*> servers;
-		servers.push_back(&server);
+		if (servers.empty())
+		{
+			throw std::runtime_error("No server blocks found in config file: " + std::string(argv[1]));
+		}
 
 		Core core(servers);
 		core.core_loop();
@@ -40,7 +83,10 @@ int main()
 	catch (std::exception& e)
 	{
 		std::cerr << e.what() << std::endl;
+		for (size_t i = 0; i < servers.size(); ++i) delete servers[i];
 		return 1;
 	}
+
+	for (size_t i = 0; i < servers.size(); ++i) delete servers[i];
 	return 0;
 }
