@@ -7,6 +7,7 @@ Route::Route(const CFG_Route& config)
 	  index_file_(config.index_file_),
 	  has_redirect_(config.has_redirect_),
 	  redirect_target_(config.redirect_target_),
+	  redirect_code_(config.redirect_code_),
 	  allowed_methods_(config.allowed_methods_),
 	  upload_enabled_(config.upload_enabled_),
 	  upload_dir_(config.upload_dir_)
@@ -32,6 +33,7 @@ Route& Route::operator=(const Route& rhs)
 		index_file_ = rhs.index_file_;
 		has_redirect_ = rhs.has_redirect_;
 		redirect_target_ = rhs.redirect_target_;
+		redirect_code_ = rhs.redirect_code_;
 		allowed_methods_ = rhs.allowed_methods_;
 		upload_enabled_ = rhs.upload_enabled_;
 		upload_dir_ = rhs.upload_dir_;
@@ -61,6 +63,11 @@ const std::string& Route::get_index_file() const
 const std::string& Route::get_redirect_target() const
 {
 	return redirect_target_;
+}
+
+int Route::get_redirect_code() const
+{
+	return redirect_code_;
 }
 
 int Route::get_allowed_methods() const

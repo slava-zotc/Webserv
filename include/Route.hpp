@@ -11,6 +11,7 @@ struct CFG_Route
 	std::string index_file_;
 	bool has_redirect_;
 	std::string redirect_target_;
+	int redirect_code_;
 	int allowed_methods_;
 	bool upload_enabled_;
 	std::string upload_dir_;
@@ -34,6 +35,7 @@ public:
 	const std::string& get_root() const;
 	const std::string& get_index_file() const;
 	const std::string& get_redirect_target() const;
+	int get_redirect_code() const;
 	bool get_autoindex() const;
 	bool get_has_redirect() const;
 	int get_allowed_methods() const;
@@ -49,6 +51,7 @@ private:
 	std::string index_file_;
 	bool has_redirect_;
 	std::string redirect_target_;
+	int redirect_code_;
 	int allowed_methods_;
 	bool upload_enabled_;
 	std::string upload_dir_;

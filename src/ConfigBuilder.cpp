@@ -92,6 +92,7 @@ CFG_Route buildCfgRoute(const ConfigBlock& block, const std::string& parentRoot)
         }
         cfg.has_redirect_ = true;
         cfg.redirect_target_ = it->second[1];
+        cfg.redirect_code_ = code;
     }
 
     return cfg;

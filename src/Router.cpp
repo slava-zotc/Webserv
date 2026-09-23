@@ -35,6 +35,11 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 	{
 		return apply_error_page(response, server);
 	}
+	else if (route->get_has_redirect())
+	{
+		response = HttpResponse(route->get_redirect_code());
+		response.set_header("Location", route->get_redirect_target());
+	}
 	else if (request.get_method() == HttpRequest::GET)
 	{
 		if (!(route->get_allowed_methods() & Route::GET))

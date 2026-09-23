@@ -42,6 +42,10 @@ std::string HttpResponse::get_reason_phrase(int status_code)
 			return "Created";
 		case 204:
 			return "No Content";
+		case 301:
+			return "Moved Permanently";
+		case 302:
+			return "Found";
 		case 400:
 			return "Bad Request";
 		case 403:
