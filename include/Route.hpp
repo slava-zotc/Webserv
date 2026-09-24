@@ -1,7 +1,7 @@
 #ifndef ROUTE_HPP
 #define ROUTE_HPP
 #include <string>
-
+#include <iostream>
 
 struct CFG_Route
 {
@@ -15,6 +15,9 @@ struct CFG_Route
 	int allowed_methods_;
 	bool upload_enabled_;
 	std::string upload_dir_;
+	std::string extensions_;
+	std::string path_interpreter_;
+
 };
 
 
@@ -41,6 +44,8 @@ public:
 	int get_allowed_methods() const;
 	bool get_upload_enabled() const;
 	const std::string& get_upload_dir() const;
+	const std::string& get_extensions() const;
+	const std::string& get_path_interpreter() const;
 	Route(const Route& src);
 	Route& operator=(const Route& rhs);
 
@@ -55,6 +60,11 @@ private:
 	int allowed_methods_;
 	bool upload_enabled_;
 	std::string upload_dir_;
+	std::string extensions_;
+	std::string path_interpreter_;
 	Route();
 };
+
+std::ostream& operator<<(std::ostream& os, const Route& v);
+
 #endif

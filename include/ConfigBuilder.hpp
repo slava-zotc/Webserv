@@ -4,6 +4,7 @@
 #include "ConfigParser.hpp"
 #include "Route.hpp"
 #include "Server.hpp"
+#include <unistd.h>
 
 CFG_Server buildCfgServer(const ConfigBlock& block);
 CFG_Route  buildCfgRoute(const ConfigBlock& block, const std::string& parentRoot);
