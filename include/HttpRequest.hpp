@@ -46,6 +46,7 @@ private:
 	size_t content_length_;
 	size_t max_body_size_;
 	int error_status_;
+	std::string query_string_;
 
 	void process_start_line(const std::string& line);
 	Methods convert_method_str(const std::string& method_str);

@@ -117,7 +117,15 @@ void HttpRequest::process_start_line(const std::string& line)
 		return;
 	}
 	method_ = convert_method_str(method_str);
-	path_ = path_str;
+	size_t pos = path_str.find_first_of('?');
+	if (pos != std::string::npos)
+	{
+		path_ = path_str.substr(0 , pos);
+		query_string_ = path_str.substr(pos + 1);
+		std::cout << "[" << path_ << "] " << "[" << query_string_ << "]" << std::endl;
+	}
+	else
+		path_ = path_str;
 	version_ = version_str;
 	parsing_state_ = PARSING_HEADERS;
 }
