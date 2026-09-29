@@ -5,6 +5,7 @@
 #include <exception>
 #include <iostream>
 
+#include "CgiProcess.hpp"
 #include "HttpRequest.hpp"
 #include "HttpResponse.hpp"
 #include "Router.hpp"
@@ -82,22 +83,16 @@ void ClientSocket::handle_read(const Server& server)
 		request.parse(recv_string);
 		if (request.get_parsing_state() == HttpRequest::PARSING_DONE)
 		{
-			// TODO: подумать о том стоит ли хранить роут в клиент сокет и вычислять
-			// его в конструкторе(не в конструкторе но где то где это нативно)
-			// и может быть выставлять флаг is_cgi
+			// TODO: подумать о том стоит ли хранить роут в клиент сокет и
+			// вычислять его в конструкторе(не в конструкторе но где то где это
+			// нативно) и может быть выставлять флаг is_cgi
 			const Route* route =
 				Router::matching(request.get_path(), server.get_route());
 			if (route
 				&& Router::is_cgi(request.get_path(), request.get_method(),
 								  *route))
 			{
-				std::cerr << "[Client Socket] Detected cgi " << request.get_path()
-						  << " query=" << request.get_query() << std::endl;
-
-				HttpResponse response =
-					Router::apply_error_page(HttpResponse(501), server);
-
-				response_buffer = response.serialize();
+				start_cgi(*route, server);
 			}
 			else
 			{
@@ -138,6 +133,35 @@ void ClientSocket::handle_read(const Server& server)
 	}
 	state_client = READY_SEND;	// Переводим в режим отправки
 }
+
+void ClientSocket::start_cgi(const Route& route, const Server& server)
+{
+	std::cerr << "[Client Socket] Detected cgi " << request.get_path()
+			  << " query=" << request.get_query() << std::endl;
+	//TODO: добавить проверкуу на .. в пути
+	std::string resolve_path = Router::resolve_path(request.get_path(), route);
+	struct stat st;
+	if (stat(resolve_path.c_str(), &st) == -1 || !S_ISREG(st.st_mode))
+	{
+		std::cerr << "[Client Socket] cgi file not found [" << resolve_path
+				  << "]" << std::endl;
+		HttpResponse response =
+			Router::apply_error_page(HttpResponse(404), server);
+		response_buffer = response.serialize();
+	}
+	else
+	{
+		std::vector<std::string> dir_and_filename =
+			CgiProcess::get_dir_and_filename(resolve_path);
+		std::cerr << "[Client Socket] get dir cgi [" << dir_and_filename[0]
+				  << "] and filename [" << dir_and_filename[1] << "]"
+				  << std::endl;
+		HttpResponse response =
+			Router::apply_error_page(HttpResponse(501), server);
+		response_buffer = response.serialize();
+	}
+}
+
 /**
  * @brief Обрабатывает отправку HTTP-ответа клиенту
  *

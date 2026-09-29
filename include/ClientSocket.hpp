@@ -6,6 +6,7 @@
 #include <string>
 
 #include "HttpRequest.hpp"
+#include "Route.hpp"
 #include "Socket.hpp"
 
 class Server;
@@ -51,6 +52,7 @@ private:
 	HttpRequest request;
 	std::string::size_type partial_write;
 	State state_client;
+	void start_cgi(const Route& route, const Server& server);
 };
 
 #endif	// CLIENT_SOCKET_HPP
