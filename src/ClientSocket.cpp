@@ -77,14 +77,33 @@ void ClientSocket::handle_read(const Server& server)
 	std::string recv_string(tmp_buffer, byte_recv);
 	try
 	{
-		// Лимит тела запроса — из конфига конкретного сервера, а не
-		// глобальная константа.
+		// Лимит тела запроса — из конфига конкретного сервера
 		request.set_max_body_size(server.get_max_body_size());
 		request.parse(recv_string);
 		if (request.get_parsing_state() == HttpRequest::PARSING_DONE)
 		{
-			HttpResponse response = Router::handle_request(request, server);
-			response_buffer = response.serialize();
+			// TODO: подумать о том стоит ли хранить роут в клиент сокет и вычислять
+			// его в конструкторе(не в конструкторе но где то где это нативно)
+			// и может быть выставлять флаг is_cgi
+			const Route* route =
+				Router::matching(request.get_path(), server.get_route());
+			if (route
+				&& Router::is_cgi(request.get_path(), request.get_method(),
+								  *route))
+			{
+				std::cerr << "[Client Socket] Detected cgi " << request.get_path()
+						  << " query=" << request.get_query() << std::endl;
+
+				HttpResponse response =
+					Router::apply_error_page(HttpResponse(501), server);
+
+				response_buffer = response.serialize();
+			}
+			else
+			{
+				HttpResponse response = Router::handle_request(request, server);
+				response_buffer = response.serialize();
+			}
 		}
 		else if (request.get_parsing_state() == HttpRequest::PARSING_ERROR)
 		{
@@ -104,7 +123,8 @@ void ClientSocket::handle_read(const Server& server)
 		std::cerr << "[ClientSocket] fd=" << socket_fd.get_fd()
 				  << ": exception while handling request: " << e.what()
 				  << " -- closing this connection with 500" << std::endl;
-		HttpResponse response = Router::apply_error_page(HttpResponse(500), server);
+		HttpResponse response =
+			Router::apply_error_page(HttpResponse(500), server);
 		response_buffer = response.serialize();
 	}
 	catch (...)
@@ -112,7 +132,8 @@ void ClientSocket::handle_read(const Server& server)
 		std::cerr << "[ClientSocket] fd=" << socket_fd.get_fd()
 				  << ": unknown exception while handling request"
 				  << " -- closing this connection with 500" << std::endl;
-		HttpResponse response = Router::apply_error_page(HttpResponse(500), server);
+		HttpResponse response =
+			Router::apply_error_page(HttpResponse(500), server);
 		response_buffer = response.serialize();
 	}
 	state_client = READY_SEND;	// Переводим в режим отправки

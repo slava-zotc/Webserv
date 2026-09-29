@@ -15,15 +15,18 @@ public:
 	static const Route* matching(const std::string& path,
 								 const std::vector<Route>& route);
 	static HttpResponse handle_get_method(const std::string& resolve_path,
-										   const std::string& url_path,
-										   const Route& route);
+										  const std::string& url_path,
+										  const Route& route);
 	static HttpResponse handle_post_method(const std::string& upload_path,
-											const std::string& body);
+										   const std::string& body);
 	static HttpResponse handle_delete_method(const std::string& resolve_path);
 	static std::string resolve_path(const std::string& path,
 									const Route& route);
 	static std::string resolve_upload_path(const std::string& path,
-											const Route& route);
+										   const Route& route);
+
+	static bool is_cgi(const std::string& path, HttpRequest::Methods method,
+                        const Route& route);
 	/**
 	 * @brief Для ответа с кодом ошибки (>=400) и ещё пустым телом
 	 * подставляет тело страницы ошибки: сперва пробует файл из
@@ -33,7 +36,7 @@ public:
 	 * возвращаются как есть.
 	 */
 	static HttpResponse apply_error_page(HttpResponse response,
-										  const Server& server);
+										 const Server& server);
 
 private:
 	static std::string get_content_type(const std::string& path);
@@ -43,7 +46,7 @@ private:
 	 * независимо от того, заканчивается ли base уже на '/'.
 	 */
 	static std::string join_path(const std::string& base,
-								  const std::string& name);
+								 const std::string& name);
 	/**
 	 * @brief Открывает и читает уже проверенный (существующий, обычный)
 	 * файл, возвращает готовый 200-ответ с Content-Type по расширению.
@@ -56,7 +59,9 @@ private:
 	 * @param url_path Исходный URL-путь запроса (для построения ссылок)
 	 */
 	static HttpResponse generate_autoindex(const std::string& dir_path,
-											const std::string& url_path);
+										   const std::string& url_path);
+
+	static int method_to_route_bit(HttpRequest::Methods method);
 };
 
 #endif	// ROUTER_HPP

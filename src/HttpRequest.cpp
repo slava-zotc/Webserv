@@ -194,3 +194,8 @@ int HttpRequest::get_error_status() const
 {
 	return error_status_;
 }
+
+const std::string& HttpRequest::get_query() const
+{
+	return query_string_;
+}

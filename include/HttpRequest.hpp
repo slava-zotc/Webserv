@@ -29,6 +29,7 @@ public:
 	const std::string& get_path() const;
 	const std::string& get_version() const;
 	const std::string& get_body() const;
+	const std::string& get_query() const;
 	const std::map<std::string, std::string>& get_headers() const;
 	Methods get_method() const;
 	ParsingState get_parsing_state() const;

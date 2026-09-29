@@ -60,6 +60,8 @@ std::string HttpResponse::get_reason_phrase(int status_code)
 			return "Payload Too Large";
 		case 500:
 			return "Internal Server Error";
+		case 501:
+			return "Not Implemented";
 		default:
 			return "Unknown";
 	}

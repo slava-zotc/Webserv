@@ -1,8 +1,50 @@
 #include "Router.hpp"
 
-#include <cstdio>
 #include <dirent.h>
+
+#include <cstdio>
 #include <sstream>
+
+int Router::method_to_route_bit(HttpRequest::Methods method)
+{
+	switch (method)
+	{
+		case HttpRequest::GET:
+			return Route::GET;
+		case HttpRequest::POST:
+			return Route::POST;
+		case HttpRequest::DELETE:
+			return Route::DELETE;
+		default:
+			return 0;  // UNKNOWN: ни один бит маски не совпадёт
+	}
+}
+
+bool Router::is_cgi(const std::string& path, HttpRequest::Methods method,
+					const Route& route)
+{
+	const std::string& ext = route.get_extensions();
+
+	// Редирект важнее CGI: такой запрос обрабатывает handle_request.
+	if (route.get_has_redirect()) return false;
+
+	// У location не настроен CGI.
+	if (ext.empty()) return false;
+
+	// Сначала длины: иначе path.length() - ext.length() уйдёт в "минус",
+	// в size_t это огромное число, и compare бросит std::out_of_range.
+	if (path.length() < ext.length()) return false;
+
+	// Путь должен заканчиваться ровно на расширение.
+	if (path.compare(path.length() - ext.length(), ext.length(), ext) != 0)
+		return false;
+
+	// Метод должен быть разрешён в этом location.
+	if (!(route.get_allowed_methods() & method_to_route_bit(method)))
+		return false;
+
+	return true;
+}
 
 std::string Router::resolve_path(const std::string& path, const Route& route)
 {
@@ -15,7 +57,7 @@ std::string Router::resolve_path(const std::string& path, const Route& route)
 }
 
 std::string Router::resolve_upload_path(const std::string& path,
-										 const Route& route)
+										const Route& route)
 {
 	std::string tail = path.substr(route.get_prefix().length());
 
@@ -84,14 +126,14 @@ std::string Router::default_error_body(const HttpResponse& response)
 {
 	std::stringstream html;
 	html << "<html><head><title>" << response.get_status_code() << " "
-		 << response.get_reason_phrase()
-		 << "</title></head><body><h1>" << response.get_status_code() << " "
-		 << response.get_reason_phrase() << "</h1></body></html>";
+		 << response.get_reason_phrase() << "</title></head><body><h1>"
+		 << response.get_status_code() << " " << response.get_reason_phrase()
+		 << "</h1></body></html>";
 	return html.str();
 }
 
 HttpResponse Router::apply_error_page(HttpResponse response,
-									   const Server& server)
+									  const Server& server)
 {
 	if (response.get_status_code() < 400 || !response.get_body().empty())
 		return response;
@@ -117,8 +159,8 @@ HttpResponse Router::apply_error_page(HttpResponse response,
 
 				while (total_read < total_size)
 				{
-					int tmp_read_byte =
-						read(fd, &body[0] + total_read, total_size - total_read);
+					int tmp_read_byte = read(fd, &body[0] + total_read,
+											 total_size - total_read);
 					if (tmp_read_byte <= 0)
 					{
 						ok = false;
@@ -130,7 +172,8 @@ HttpResponse Router::apply_error_page(HttpResponse response,
 				if (ok)
 				{
 					response.set_body(body);
-					response.set_header("Content-Type", get_content_type(it->second));
+					response.set_header("Content-Type",
+										get_content_type(it->second));
 					return response;
 				}
 			}
@@ -206,7 +249,7 @@ HttpResponse Router::read_file_response(const std::string& file_path)
 }
 
 HttpResponse Router::generate_autoindex(const std::string& dir_path,
-										 const std::string& url_path)
+										const std::string& url_path)
 {
 	DIR* dir = opendir(dir_path.c_str());
 	if (dir == NULL) return HttpResponse(500);
@@ -225,9 +268,8 @@ HttpResponse Router::generate_autoindex(const std::string& dir_path,
 	while ((entry = readdir(dir)) != NULL)
 	{
 		std::string name = entry->d_name;
-		if (name == ".") continue;  // "." — сама директория, смысла нет
-		html << "<li><a href=\"" << url << name << "\">" << name
-			 << "</a></li>";
+		if (name == ".") continue;	// "." — сама директория, смысла нет
+		html << "<li><a href=\"" << url << name << "\">" << name << "</a></li>";
 	}
 	closedir(dir);
 
@@ -240,8 +282,8 @@ HttpResponse Router::generate_autoindex(const std::string& dir_path,
 }
 
 HttpResponse Router::handle_get_method(const std::string& resolve_path,
-										const std::string& url_path,
-										const Route& route)
+									   const std::string& url_path,
+									   const Route& route)
 {
 	struct stat file_stat;
 
@@ -250,7 +292,8 @@ HttpResponse Router::handle_get_method(const std::string& resolve_path,
 	if (S_ISDIR(file_stat.st_mode))
 	{
 		// Шаг 1: пробуем index_file_ внутри директории.
-		std::string index_path = join_path(resolve_path, route.get_index_file());
+		std::string index_path =
+			join_path(resolve_path, route.get_index_file());
 		struct stat index_stat;
 
 		if (stat(index_path.c_str(), &index_stat) == 0
@@ -269,7 +312,7 @@ HttpResponse Router::handle_get_method(const std::string& resolve_path,
 }
 
 HttpResponse Router::handle_post_method(const std::string& upload_path,
-										 const std::string& body)
+										const std::string& body)
 {
 	int fd = open(upload_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
 	if (fd == -1) return HttpResponse(500);
@@ -277,8 +320,8 @@ HttpResponse Router::handle_post_method(const std::string& upload_path,
 	size_t total_written = 0;
 	while (total_written < body.size())
 	{
-		int tmp_write_byte =
-			write(fd, body.c_str() + total_written, body.size() - total_written);
+		int tmp_write_byte = write(fd, body.c_str() + total_written,
+								   body.size() - total_written);
 		if (tmp_write_byte == -1)
 		{
 			close(fd);
