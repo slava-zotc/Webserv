@@ -120,9 +120,8 @@ void HttpRequest::process_start_line(const std::string& line)
 	size_t pos = path_str.find_first_of('?');
 	if (pos != std::string::npos)
 	{
-		path_ = path_str.substr(0 , pos);
+		path_ = path_str.substr(0, pos);
 		query_string_ = path_str.substr(pos + 1);
-		std::cout << "[" << path_ << "] " << "[" << query_string_ << "]" << std::endl;
 	}
 	else
 		path_ = path_str;
@@ -174,10 +173,12 @@ HttpRequest::~HttpRequest(void)
 {
 }
 
-const std::string& HttpRequest::get_path() const{
+const std::string& HttpRequest::get_path() const
+{
 	return path_;
 }
-const std::string& HttpRequest::get_version() const{
+const std::string& HttpRequest::get_version() const
+{
 	return version_;
 }
 const std::string& HttpRequest::get_body() const
@@ -198,4 +199,24 @@ int HttpRequest::get_error_status() const
 const std::string& HttpRequest::get_query() const
 {
 	return query_string_;
+}
+
+const std::map<std::string, std::string>& HttpRequest::get_headers() const
+{
+	return headers_;
+}
+
+std::string HttpRequest::get_str_method() const
+{
+	switch (method_)
+	{
+		case GET:
+			return std::string("GET");
+		case POST:
+			return std::string("POST");
+		case DELETE:
+			return std::string("DELETE");
+		default:
+			return std::string("UNKNOWN");
+	}
 }

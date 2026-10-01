@@ -156,6 +156,12 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
 		std::cerr << "[Client Socket] get dir cgi [" << dir_and_filename[0]
 				  << "] and filename [" << dir_and_filename[1] << "]"
 				  << std::endl;
+		std::vector<std::string> env = CgiProcess::get_env_string(request, server, dir_and_filename[1]);
+		for (size_t i = 0; i < env.size(); ++i)
+		{
+			std::cerr << "[Client Socket] cgi env[" << i << "]=" << env[i]
+					  << std::endl;
+		}
 		HttpResponse response =
 			Router::apply_error_page(HttpResponse(501), server);
 		response_buffer = response.serialize();
