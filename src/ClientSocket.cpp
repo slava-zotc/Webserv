@@ -1,6 +1,7 @@
 #include "ClientSocket.hpp"
 
 #include <sys/socket.h>
+#include <sys/wait.h>
 
 #include <exception>
 #include <iostream>
@@ -17,7 +18,7 @@
  * Инициализирует клиентское соединение в начальном состоянии (READ_HEADERS).
  */
 ClientSocket::ClientSocket(int fd)
-	: socket_fd(fd), partial_write(0), state_client(READING)
+	: socket_fd(fd), partial_write(0), state_client(READING), cgi_process(NULL)
 {
 }
 
@@ -138,7 +139,7 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
 {
 	std::cerr << "[Client Socket] Detected cgi " << request.get_path()
 			  << " query=" << request.get_query() << std::endl;
-	//TODO: добавить проверкуу на .. в пути
+	// TODO: добавить проверкуу на .. в пути
 	std::string resolve_path = Router::resolve_path(request.get_path(), route);
 	struct stat st;
 	if (stat(resolve_path.c_str(), &st) == -1 || !S_ISREG(st.st_mode))
@@ -156,15 +157,43 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
 		std::cerr << "[Client Socket] get dir cgi [" << dir_and_filename[0]
 				  << "] and filename [" << dir_and_filename[1] << "]"
 				  << std::endl;
-		std::vector<std::string> env = CgiProcess::get_env_string(request, server, dir_and_filename[1]);
-		for (size_t i = 0; i < env.size(); ++i)
+		const std::vector<std::string> env =
+			CgiProcess::get_env_string(request, server, dir_and_filename[1]);
+		CgiProcess* cgi = new CgiProcess();
+		if (!cgi->execute_cgi(route.get_path_interpreter(), dir_and_filename[0],
+							  dir_and_filename[1], env))
 		{
-			std::cerr << "[Client Socket] cgi env[" << i << "]=" << env[i]
-					  << std::endl;
+			std::cerr << "[Client Socket] cgi execute failed [" << resolve_path
+					  << "]" << std::endl;
+			HttpResponse response =
+				Router::apply_error_page(HttpResponse(500), server);
+			response_buffer = response.serialize();
+			delete cgi;
 		}
-		HttpResponse response =
-			Router::apply_error_page(HttpResponse(501), server);
-		response_buffer = response.serialize();
+		else
+		{
+			cgi_process = cgi;
+			while (cgi_process->is_output_done() == false)
+			{
+				if (!cgi_process->read_cgi_output())
+				{
+					std::cerr << "[Client Socket] cgi read output failed ["
+							  << resolve_path << "]" << std::endl;
+					HttpResponse response =
+						Router::apply_error_page(HttpResponse(501), server);
+					response_buffer = response.serialize();
+					delete cgi_process;
+					cgi_process = NULL;
+					return;
+				}
+			}
+			cgi_process->wait_for_child();
+			HttpResponse response(200);
+			response.set_body(cgi_process->get_output());
+			response_buffer = response.serialize();
+			delete cgi_process;
+			cgi_process = NULL;
+		}
 	}
 }
 

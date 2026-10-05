@@ -10,7 +10,7 @@
 #include "Socket.hpp"
 
 class Server;
-
+class CgiProcess;
 class ClientSocket
 {
 public:
@@ -52,6 +52,7 @@ private:
 	HttpRequest request;
 	std::string::size_type partial_write;
 	State state_client;
+	CgiProcess* cgi_process;
 	void start_cgi(const Route& route, const Server& server);
 };
 
