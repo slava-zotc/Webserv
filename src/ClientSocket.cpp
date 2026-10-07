@@ -238,4 +238,6 @@ int ClientSocket::get_client_socket_fd() const
  */
 ClientSocket::~ClientSocket()
 {
+	delete cgi_process;
+	cgi_process = NULL;
 }

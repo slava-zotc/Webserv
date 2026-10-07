@@ -1,4 +1,5 @@
 #include "HttpRequest.hpp"
+#include "HttpUtils.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -50,8 +51,24 @@ void HttpRequest::process_header_line(const std::string& line)
 {
 	std::string key;
 	std::string value;
+	// Если встретили пустую строку, значит, заголовки закончились.
 	if (line.empty())
 	{
+		if (version_ == "HTTP/1.1" && headers_.count("host") == 0)
+		{
+			parsing_state_ = PARSING_ERROR;
+			return;
+		}
+
+		if (headers_.count("transfer-encoding") > 0)
+		{
+			// TODO Написать обработчик для chanked transfer-encoding
+			// Пока что отказываем в обработке запроса с 501 Not Implemented
+			error_status_ = 501;
+			parsing_state_ = PARSING_ERROR;
+			return;
+		}
+		// Проверяем, есть ли Content-Length и не превышает ли он лимит
 		if (headers_.count("content-length") > 0)
 		{
 			std::stringstream ss(headers_["content-length"]);
@@ -81,28 +98,31 @@ void HttpRequest::process_header_line(const std::string& line)
 		{
 			parsing_state_ = PARSING_DONE;
 		}
-		// TODO Написать обработчик для chanked transfer-encoding
 		return;
 	}
-	size_t pos = line.find(':');
-	if (pos == std::string::npos)
+	if (!has_forbidden_chars(line))
+	{
+		if (parse_header_line(line, key, value))
+		{
+			if ((key == "content-length" || key == "host") && headers_.count(key) > 0)
+			{
+				parsing_state_ = PARSING_ERROR;
+				return;
+			}
+			
+			headers_[key] = value;
+		}
+		else
+		{
+			parsing_state_ = PARSING_ERROR;
+			return;
+		}
+	}
+	else
 	{
 		parsing_state_ = PARSING_ERROR;
 		return;
 	}
-	key = line.substr(0, pos);
-	std::transform(key.begin(), key.end(), key.begin(), ::tolower);
-	value = line.substr(pos + 1);
-	size_t first_not_space = value.find_first_not_of("\t ");
-	if (first_not_space == std::string::npos)
-	{
-		value = "";
-	}
-	else
-	{
-		value = value.substr(first_not_space);
-	}
-	headers_[key] = value;
 }
 
 void HttpRequest::process_start_line(const std::string& line)
