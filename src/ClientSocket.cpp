@@ -32,6 +32,7 @@ short ClientSocket::get_ready_events() const
 	short mask = 0;
 	if (is_ready_send()) mask |= WANT_WRITE;	// Эта клиент готов до отправки
 	if (is_reading_phase()) mask |= WANT_READ;	// Равно, я может читать ещё
+	if (state_client == WAITING_CGI) mask = 0;	// Ждём cgi
 	return mask;
 }
 /**
@@ -57,6 +58,29 @@ bool ClientSocket::is_reading_phase() const
 bool ClientSocket::is_ready_delete() const
 {
 	return state_client == READY_DELETE;
+}
+
+/**
+ * @brief Возвращает файловый дескриптор для чтения из CGI
+ * @return Файловый дескриптор или -1, если CGI не запущен
+ */
+int ClientSocket::get_cgi_fd_read() const
+{
+	if (cgi_process)
+	{
+		return cgi_process->get_fd_read();
+	}
+	return -1;
+}
+
+bool ClientSocket::is_waiting_cgi_exit() const
+{
+	return cgi_process != NULL && cgi_process->is_output_done();
+}
+
+bool ClientSocket::has_cgi() const
+{
+	return cgi_process != NULL;
 }
 /**
  * @brief Обрабатывает получение данных от клиента
@@ -132,7 +156,41 @@ void ClientSocket::handle_read(const Server& server)
 			Router::apply_error_page(HttpResponse(500), server);
 		response_buffer = response.serialize();
 	}
-	state_client = READY_SEND;	// Переводим в режим отправки
+	if (state_client != WAITING_CGI)
+	{
+		state_client = READY_SEND;	// Переводим в режим отправки
+	}
+}
+
+void ClientSocket::handle_cgi_events(const Server& server)
+{
+	if (cgi_process == NULL)
+	{
+		return;	 // No CGI process to handle
+	}
+	HttpResponse response(200);
+	int cgi_result = cgi_process->process_output(response);
+	if (cgi_result == CgiProcess::CGI_ERROR)
+	{
+		HttpResponse error_response =
+			Router::apply_error_page(HttpResponse(502), server);
+		response_buffer = error_response.serialize();
+		delete cgi_process;
+		cgi_process = NULL;
+		state_client = READY_SEND;
+	}
+	else if (cgi_result == CgiProcess::CGI_SUCCESS)
+	{
+		response_buffer = response.serialize();
+		delete cgi_process;
+		cgi_process = NULL;
+		state_client = READY_SEND;
+	}
+	else
+	{
+		state_client = WAITING_CGI;
+		return;	 // CGI is still running
+	}
 }
 
 void ClientSocket::start_cgi(const Route& route, const Server& server)
@@ -173,38 +231,8 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
 		else
 		{
 			cgi_process = cgi;
-			while (cgi_process->is_output_done() == false)
-			{
-				if (!cgi_process->read_cgi_output())
-				{
-					std::cerr << "[Client Socket] cgi read output failed ["
-							  << resolve_path << "]" << std::endl;
-					HttpResponse response =
-						Router::apply_error_page(HttpResponse(501), server);
-					response_buffer = response.serialize();
-					delete cgi_process;
-					cgi_process = NULL;
-					return;
-				}
-			}
-			cgi_process->wait_for_child();
-			HttpResponse response(200);
-			if (WEXITSTATUS(cgi_process->get_status()) != 0 || WIFSIGNALED(cgi_process->get_status()))
-			{
-				std::cerr << "[Client Socket] cgi exited with non-zero status ["
-						  << resolve_path << "]" << std::endl;
-				response = Router::apply_error_page(HttpResponse(502), server);
-			}
-			else if (!cgi_process->handle_cgi_response(response))
-			{
-				std::cerr << "[Client Socket] cgi response parse failed ["
-						  << resolve_path << "]" << std::endl;
-				response = Router::apply_error_page(HttpResponse(502), server);
-			}
-
-			response_buffer = response.serialize();
-			delete cgi_process;
-			cgi_process = NULL;
+			state_client = WAITING_CGI;
+			return;
 		}
 	}
 }

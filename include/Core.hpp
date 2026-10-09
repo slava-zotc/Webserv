@@ -69,6 +69,11 @@ private:
 	Core();
 
 	/**
+	 * @brief Карта соответствия CGI fd -> client fd
+	 */
+	std::map<int, int> cgi_fd_to_client_fd;	///< Карта соответствия CGI fd -> client fd
+
+	/**
 	 * @brief Карта активных клиентских соединений (fd -> ClientConnection)
 	 */
 	std::map<int, ClientConnection> client_sockets;

@@ -24,15 +24,23 @@ public:
 					 const std::string& directory, const std::string& filename,
 					 const std::vector<std::string>& env);
 	bool is_output_done() const;
+	int get_fd_read() const;
 	int get_status() const;
 	bool handle_cgi_response(HttpResponse& response);
+	int process_output(HttpResponse& response);
 	const std::string& get_output() const;
 	bool read_cgi_output();
-	void wait_for_child();
+	int wait_for_child();
+	enum
+	{
+		CGI_SUCCESS = 0,
+		CGI_RUNNING = 1,
+		CGI_ERROR = -1
+	};
 
 private:
 	static std::vector<char*> convert_string_to_char_array(
-	const std::vector<std::string>& env_string);
+		const std::vector<std::string>& env_string);
 	CgiProcess(const CgiProcess& src);
 	CgiProcess& operator=(const CgiProcess& rhs);
 	pid_t pid_;

@@ -1,5 +1,6 @@
 #include "CgiProcess.hpp"
 
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -147,6 +148,41 @@ bool CgiProcess::read_cgi_output()
 	}
 }
 
+int CgiProcess::process_output(HttpResponse& response)
+{
+	if (fd_read_ != -1 && !read_cgi_output())
+	{
+				return CGI_ERROR;
+	}
+	if (is_output_done())
+	{
+		int wait_result = wait_for_child();
+		if (wait_result == -1)
+		{
+			return CGI_ERROR;
+		}
+		else if (wait_result == 0)
+		{
+			return CGI_RUNNING;
+		}
+		else if (wait_result == 1
+				 && (!WIFEXITED(get_status())
+					 || WEXITSTATUS(get_status()) != 0))
+		{
+			return CGI_ERROR;
+		}
+		if (!handle_cgi_response(response))
+		{
+			return CGI_ERROR;
+		}
+		return CGI_SUCCESS;
+	}
+	else
+	{
+		return CGI_RUNNING;
+	}
+}
+
 bool CgiProcess::handle_cgi_response(HttpResponse& response)
 {
 	std::istringstream response_stream(buffer_output_);
@@ -234,15 +270,25 @@ bool CgiProcess::handle_cgi_response(HttpResponse& response)
 	return true;
 }
 
-void CgiProcess::wait_for_child()
+int CgiProcess::wait_for_child()
 {
 	if (pid_ != -1)
 	{
 		int status;
-		waitpid(pid_, &status, 0);
+
+		int status_proc = waitpid(pid_, &status, WNOHANG);
+		if (status_proc == 0)
+		{
+			return 0;  // Child process is still running
+		}
+		else if (status_proc == -1)
+		{
+			return -1;	// Error occurred while waiting
+		}
 		status_child_ = status;
 		pid_ = -1;
 	}
+	return 1;  // Child process has finished
 }
 
 bool CgiProcess::execute_cgi(const std::string& path_interpreter,
@@ -283,7 +329,8 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 	{
 		close(out_fd[0]);
 		close(in_fd[1]);
-		if (dup2(out_fd[1], STDOUT_FILENO) == -1 || dup2(in_fd[0], STDIN_FILENO) == -1)
+		if (dup2(out_fd[1], STDOUT_FILENO) == -1
+			|| dup2(in_fd[0], STDIN_FILENO) == -1)
 		{
 			std::exit(EXIT_FAILURE);
 		}
@@ -298,11 +345,19 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 	}
 	else
 	{
+		fcntl(out_fd[0], F_SETFL, O_NONBLOCK);
+		fcntl(in_fd[1], F_SETFL, O_NONBLOCK);
 		close(in_fd[0]);
-		close(in_fd[1]); // в этом примере мы не используем стандартный ввод для CGI, поэтому закрываем его
+		close(in_fd[1]);  // в этом примере мы не используем стандартный ввод
+						  // для CGI, поэтому закрываем его
 		close(out_fd[1]);
 		fd_read_ = out_fd[0];
 	}
 
 	return true;
+}
+
+int CgiProcess::get_fd_read() const
+{
+	return fd_read_;
 }

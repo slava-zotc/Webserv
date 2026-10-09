@@ -64,6 +64,7 @@ short Core::translate_client_mask_in_posix(short mask)
 void Core::fill_pollfds()
 {
 	fds.clear();
+	cgi_fd_to_client_fd.clear();
 	struct pollfd tmp_pollfd;
 	// Добавляем в poll() все слушающие сокеты
 	for (std::map<int, ListeningSocket*>::iterator it =
@@ -84,6 +85,15 @@ void Core::fill_pollfds()
 		tmp_pollfd.fd = it->first;
 		tmp_pollfd.events = want_events;
 		fds.push_back(tmp_pollfd);
+		// Добавляем в poll() все активные CGI процессы
+		int cgi_fd = it->second.socket->get_cgi_fd_read();
+		if (cgi_fd != -1)
+		{
+			cgi_fd_to_client_fd[cgi_fd] = it->first;
+			tmp_pollfd.fd = cgi_fd;
+			tmp_pollfd.events = POLLIN;
+			fds.push_back(tmp_pollfd);
+		}
 	}
 }
 
@@ -183,19 +193,44 @@ void Core::core_loop()
 		}
 
 		// Таймаут poll() истёк, событий нет
-		if (ret == 0) continue;
-
+		
 		// Обрабатываем все готовые события
 		for (size_t i = 0; i < fds.size(); i++)
 		{
+			if (ret == 0) break;
+			if (cgi_fd_to_client_fd.find(fds[i].fd)
+				!= cgi_fd_to_client_fd.end())
+			{
+				if (fds[i].revents & (POLLIN | POLLERR | POLLHUP))
+				{
+					int client_fd = cgi_fd_to_client_fd[fds[i].fd];
+					std::map<int, ClientConnection>::iterator it_client =
+						client_sockets.find(client_fd);
+					if (it_client != client_sockets.end())
+					{
+						it_client->second.socket->handle_cgi_events(
+							*(it_client->second.server));
+					}
+				}
+				continue;
+			}
 			// Событие чтения (новое соединение или данные от клиента)
 			if (fds[i].revents & (POLLIN | POLLERR | POLLHUP))
 			{
-				if (accept_new_client(i) != 0)
-					continue;
+				if (accept_new_client(i) != 0) continue;
 			}
 			// Событие записи - отправка данных клиенту
 			dispatch_client_events(fds[i].revents, fds[i].fd);
+		}
+		for (std::map<int, ClientConnection>::iterator it =
+				 client_sockets.begin();
+			 it != client_sockets.end(); it++)
+		{
+			if (it->second.socket->is_waiting_cgi_exit()
+				&& !it->second.socket->is_ready_delete())
+			{
+				it->second.socket->handle_cgi_events(*(it->second.server));
+			}
 		}
 		// Находим готовые к удалению клиентские соединения
 		cleanup_closed_connections();

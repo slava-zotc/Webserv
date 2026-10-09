@@ -11,6 +11,7 @@
 
 class Server;
 class CgiProcess;
+class HttpResponse;
 class ClientSocket
 {
 public:
@@ -35,12 +36,21 @@ public:
 
 	void handle_write();
 
+	void handle_cgi_events(const Server& server);
+
+	int get_cgi_fd_read() const;
+
 	int get_client_socket_fd() const;
+
+	bool has_cgi() const;
+
+	bool is_waiting_cgi_exit() const;
 
 private:
 	enum State
 	{
 		READING,
+		WAITING_CGI,
 		READY_SEND,
 		READY_DELETE
 	};
