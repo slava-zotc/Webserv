@@ -12,7 +12,12 @@
 #include "HttpUtils.hpp"
 #include "Server.hpp"
 
-CgiProcess::CgiProcess(void) : pid_(-1), fd_read_(-1)
+CgiProcess::CgiProcess(void)
+	: pid_(-1),
+	  status_child_(0),
+	  fd_read_(-1),
+	  buffer_output_(""),
+	  start_time_(0)
 {
 }
 
@@ -25,7 +30,7 @@ CgiProcess::~CgiProcess(void)
 	if (pid_ != -1)
 	{
 		kill(pid_, SIGKILL);
-		wait_for_child();
+		waitpid(pid_, NULL, 0);
 	}
 }
 
@@ -152,7 +157,7 @@ int CgiProcess::process_output(HttpResponse& response)
 {
 	if (fd_read_ != -1 && !read_cgi_output())
 	{
-				return CGI_ERROR;
+		return CGI_ERROR;
 	}
 	if (is_output_done())
 	{
@@ -352,6 +357,7 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 						  // для CGI, поэтому закрываем его
 		close(out_fd[1]);
 		fd_read_ = out_fd[0];
+		start_time_ = std::time(NULL);
 	}
 
 	return true;
@@ -360,4 +366,13 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 int CgiProcess::get_fd_read() const
 {
 	return fd_read_;
+}
+
+bool CgiProcess::is_timeout(std::time_t now, int limit) const
+{
+	if (start_time_ == 0)
+	{
+		return false;  // Process has not started yet
+	}
+	return (now - start_time_) > limit;
 }

@@ -4,6 +4,7 @@
 #include <sys/types.h>
 
 #include <string>
+#include <ctime>
 #include <vector>
 
 class Server;
@@ -31,6 +32,7 @@ public:
 	const std::string& get_output() const;
 	bool read_cgi_output();
 	int wait_for_child();
+	bool is_timeout(std::time_t now, int limit) const;
 	enum
 	{
 		CGI_SUCCESS = 0,
@@ -47,6 +49,7 @@ private:
 	int status_child_;
 	int fd_read_;
 	std::string buffer_output_;
+	std::time_t start_time_;
 };
 
 #endif	// CGI_PROCESS_HPP

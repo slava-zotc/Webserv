@@ -2,7 +2,7 @@
 #define CLIENT_SOCKET_HPP
 
 #include <unistd.h>
-
+#include <ctime>
 #include <string>
 
 #include "HttpRequest.hpp"
@@ -45,6 +45,8 @@ public:
 	bool has_cgi() const;
 
 	bool is_waiting_cgi_exit() const;
+
+	void check_cgi_timeout(std::time_t now, const Server& server);
 
 private:
 	enum State

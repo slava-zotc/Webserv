@@ -222,6 +222,7 @@ void Core::core_loop()
 			// Событие записи - отправка данных клиенту
 			dispatch_client_events(fds[i].revents, fds[i].fd);
 		}
+		std::time_t now = std::time(NULL);
 		for (std::map<int, ClientConnection>::iterator it =
 				 client_sockets.begin();
 			 it != client_sockets.end(); it++)
@@ -231,6 +232,8 @@ void Core::core_loop()
 			{
 				it->second.socket->handle_cgi_events(*(it->second.server));
 			}
+			if (!it->second.socket->is_ready_delete()) 
+				it->second.socket->check_cgi_timeout(now, *(it->second.server));
 		}
 		// Находим готовые к удалению клиентские соединения
 		cleanup_closed_connections();

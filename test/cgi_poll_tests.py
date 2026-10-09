@@ -69,10 +69,23 @@ time.sleep(0.5)
 code, _ = get("/", timeout=5)
 report(code == 200, "клиент ушёл во время CGI", "сервер отвечает, код %d" % code)
 
+# 5. Пункт 4: зависший скрипт (infinite.py) -> 504, сервер всё это время отвечает.
+inf = {}
+t = threading.Thread(target=lambda: inf.update(r=get("/cgi-bin/infinite.py", timeout=20), t=time.time()))
+t0 = time.time()
+t.start()
+time.sleep(1)
+code, _ = get("/", timeout=5)
+report(code == 200, "GET / пока висит infinite.py", "код %d" % code)
+t.join()
+code, _ = inf["r"]
+dt = inf["t"] - t0
+report(code == 504 and 3 <= dt <= 10, "infinite.py -> 504 по таймауту", "код %d через %.1f с (нужно 504 за 3..10 с)" % (code, dt))
+
 # 4. Обычные CGI по-прежнему работают
 code, raw = get("/cgi-bin/hello.py")
 report(code == 200 and b"Hello" in raw, "hello.py после всего", "код %d" % code)
 
 print("\n%d/%d" % (sum(results), len(results)))
-print("Проверь вручную: ps --ppid $(pgrep webserv) -o pid=,stat=,cmd=   -> пусто (нет скриптов и зомби)")
+print("Проверь вручную: ps --ppid $(pgrep webserv) -o pid=,stat=,cmd=   -> пусто (нет скриптов, зомби и infinite.py)")
 sys.exit(0 if all(results) else 1)

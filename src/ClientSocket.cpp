@@ -273,6 +273,21 @@ int ClientSocket::get_client_socket_fd() const
 	return socket_fd.get_fd();
 }
 
+void ClientSocket::check_cgi_timeout(std::time_t now, const Server& server)
+{
+	if (cgi_process && cgi_process->is_timeout(now, 5))  // 5 секунд таймаут для CGI
+	{
+		std::cerr << "[Client Socket] CGI process timeout for fd="
+				  << socket_fd.get_fd() << std::endl;
+		HttpResponse response =
+			Router::apply_error_page(HttpResponse(504), server);
+		response_buffer = response.serialize();
+		delete cgi_process;
+		cgi_process = NULL;
+		state_client = READY_SEND;
+	}
+}
+
 /**
  * @brief Деструктор ClientSocket
  */
