@@ -25,6 +25,7 @@ public:
 					 const std::vector<std::string>& env);
 	bool is_output_done() const;
 	int get_status() const;
+	bool handle_cgi_response(HttpResponse& response);
 	const std::string& get_output() const;
 	bool read_cgi_output();
 	void wait_for_child();

@@ -189,7 +189,19 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
 			}
 			cgi_process->wait_for_child();
 			HttpResponse response(200);
-			response.set_body(cgi_process->get_output());
+			if (WEXITSTATUS(cgi_process->get_status()) != 0 || WIFSIGNALED(cgi_process->get_status()))
+			{
+				std::cerr << "[Client Socket] cgi exited with non-zero status ["
+						  << resolve_path << "]" << std::endl;
+				response = Router::apply_error_page(HttpResponse(502), server);
+			}
+			else if (!cgi_process->handle_cgi_response(response))
+			{
+				std::cerr << "[Client Socket] cgi response parse failed ["
+						  << resolve_path << "]" << std::endl;
+				response = Router::apply_error_page(HttpResponse(502), server);
+			}
+
 			response_buffer = response.serialize();
 			delete cgi_process;
 			cgi_process = NULL;

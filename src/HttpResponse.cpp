@@ -67,6 +67,17 @@ std::string HttpResponse::get_reason_phrase(int status_code)
 	}
 }
 
+bool HttpResponse::has_header(const std::string& key) const
+{
+	return headers_.count(key) != 0;
+}
+
+void HttpResponse::set_status_code(int status_code)
+{
+	status_code_ = status_code;
+	reason_phrase_ = get_reason_phrase(status_code);
+}
+
 void HttpResponse::set_body(const std::string& body)
 {
 	body_ = body;
@@ -89,7 +100,7 @@ const std::string& HttpResponse::get_reason_phrase() const
 
 void HttpResponse::set_header(const std::string& key, const std::string& value)
 {
-	if (key == "Content-Length" || key == "contennt-length")
+	if (key == "Content-Length" || key == "content-length")
 	{
 		return;
 	}

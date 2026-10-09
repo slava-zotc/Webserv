@@ -7,6 +7,8 @@
 #include <sstream>
 
 #include "HttpRequest.hpp"
+#include "HttpResponse.hpp"
+#include "HttpUtils.hpp"
 #include "Server.hpp"
 
 CgiProcess::CgiProcess(void) : pid_(-1), fd_read_(-1)
@@ -145,6 +147,93 @@ bool CgiProcess::read_cgi_output()
 	}
 }
 
+bool CgiProcess::handle_cgi_response(HttpResponse& response)
+{
+	std::istringstream response_stream(buffer_output_);
+	std::string line;
+	bool has_status_line = false;
+	bool has_content_type = false;
+	bool has_header_end = false;
+	std::streampos pos;
+	while (std::getline(response_stream, line))
+	{
+		// Условие для окончания заголовков: пустая строка или только \r
+		// (в зависимости от того, как CGI выводит заголовки)
+		if ((line == "\r" || line.empty()) && !response_stream.eof())
+		{
+			pos = response_stream.tellg();
+			if (pos != -1)
+			{
+				std::string body;
+				body = buffer_output_.substr(pos);
+				response.set_body(body);
+			}
+			has_header_end = true;
+			break;	// End of headers
+		}
+
+		if (!line.empty() && line[line.size() - 1] == '\r')
+		{
+			line.erase(line.size() - 1);  // Remove trailing \r
+		}
+		std::string key, value;
+		if (!parse_header_line(line, key, value))
+		{
+			response.set_status_code(502);	// Bad Gateway
+			return false;					// Invalid header line
+		}
+		if (key == "status")
+		{
+			if (has_status_line)
+			{
+				response.set_status_code(502);	// Bad Gateway
+				return false;					// Multiple status lines
+			}
+			if (value.size() < 3
+				|| !std::isdigit(static_cast<unsigned char>(value[0]))
+				|| !std::isdigit(static_cast<unsigned char>(value[1]))
+				|| !std::isdigit(static_cast<unsigned char>(value[2]))
+				|| (value.size() > 3 && value[3] != ' '))
+			{
+				response.set_status_code(502);	// Bad Gateway
+				return false;					// Invalid status line
+			}
+			std::istringstream status_stream(value);
+			int status_code;
+			status_stream >> status_code;
+			if (status_stream.fail() || status_code < 100 || status_code > 599)
+			{
+				response.set_status_code(502);	// Bad Gateway
+				return false;					// Invalid status code
+			}
+			response.set_status_code(status_code);
+			has_status_line = true;
+			continue;  // Skip adding this header to the response
+		}
+		else if (key == "content-type" && !has_content_type)
+		{
+			has_content_type = true;
+		}
+		else if (key == "content-type" && has_content_type)
+		{
+			response.set_status_code(502);	// Bad Gateway
+			return false;					// Multiple Content-Type headers
+		}
+		else if (key == "content-length")
+		{
+			continue;  // Ignore Content-Length header from CGI
+		}
+
+		response.set_header(key, value);
+	}
+	if (!has_header_end || !has_content_type)
+	{
+		response.set_status_code(502);	// Bad Gateway
+		return false;					// Headers not properly terminated
+	}
+	return true;
+}
+
 void CgiProcess::wait_for_child()
 {
 	if (pid_ != -1)
@@ -169,23 +258,37 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 	const std::vector<char*> argv_array =
 		CgiProcess::convert_string_to_char_array(argv);
 
-	int pipe_fd[2];
-	if (pipe(pipe_fd) == -1)
+	int out_fd[2];
+	int in_fd[2];
+	if (pipe(out_fd) == -1)
 	{
+		return false;
+	}
+	if (pipe(in_fd) == -1)
+	{
+		close(out_fd[0]);
+		close(out_fd[1]);
 		return false;
 	}
 	pid_ = fork();
 	if (pid_ == -1)
 	{
-		close(pipe_fd[0]);
-		close(pipe_fd[1]);
+		close(out_fd[0]);
+		close(out_fd[1]);
+		close(in_fd[0]);
+		close(in_fd[1]);
 		return false;
 	}
 	if (pid_ == 0)
 	{
-		close(pipe_fd[0]);
-		dup2(pipe_fd[1], STDOUT_FILENO);
-		close(pipe_fd[1]);
+		close(out_fd[0]);
+		close(in_fd[1]);
+		if (dup2(out_fd[1], STDOUT_FILENO) == -1 || dup2(in_fd[0], STDIN_FILENO) == -1)
+		{
+			std::exit(EXIT_FAILURE);
+		}
+		close(in_fd[0]);
+		close(out_fd[1]);
 		if (chdir(directory.c_str()) == -1)
 		{
 			std::exit(EXIT_FAILURE);
@@ -195,9 +298,10 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 	}
 	else
 	{
-		close(pipe_fd[1]);
-		fd_read_ = pipe_fd[0];
-		
+		close(in_fd[0]);
+		close(in_fd[1]); // в этом примере мы не используем стандартный ввод для CGI, поэтому закрываем его
+		close(out_fd[1]);
+		fd_read_ = out_fd[0];
 	}
 
 	return true;
