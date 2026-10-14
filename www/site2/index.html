@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="UTF-8"><title>webserv: second site</title></head>
+<body style="font-family: monospace; background:#1e1e1e; color:#d4d4d4; padding:2rem">
+	<h1 style="color:#ce9178">Второй сайт</h1>
+	<p>Этот ответ пришёл от другого server-блока: порт 8081 (или 127.0.0.1:8082), свой root <code>./www/site2</code>.</p>
+	<p>client_max_body_size здесь 100 байт:</p>
+	<pre>curl -i -X POST --data-binary @README.md http://localhost:8081/big.txt   -> 413</pre>
+</body>
+</html>

@@ -39,14 +39,46 @@
 <body>
 	<div class="box">
 		<h1>webserv works</h1>
-		<p><code>GET /</code> &rarr; 200 OK (index_file_ resolved from directory)</p>
-		<p>resolve_path + Content-Type: text/html</p>
-		<p>Ручные сценарии для этой страницы:</p>
+		<p>Демо-страница для <code>conf/default.conf</code>. Каждая ссылка проверяет одну возможность.</p>
+
+		<h3>Статика и маршруты</h3>
 		<ul>
-			<li><a href="/"><code>GET /</code></a> &rarr; должен отдать этот файл (200)</li>
-			<li><a href="/about/"><code>GET /about/</code></a> &rarr; должен отдать <code>about/index.html</code> (200)</li>
-			<li><a href="/empty/"><code>GET /empty/</code></a> &rarr; index_file_ отсутствует, autoindex выключен &rarr; ожидаем 403 или 404 (смотря что решишь)</li>
-			<li><a href="/nonexistent.html"><code>GET /nonexistent.html</code></a> &rarr; 404</li>
+			<li><a href="/about/"><code>GET /about/</code></a> &rarr; index.html вложенного каталога (200)</li>
+			<li><a href="/files/"><code>GET /files/</code></a> &rarr; autoindex: листинг каталога</li>
+			<li><a href="/files/data.json"><code>GET /files/data.json</code></a> &rarr; Content-Type: application/json</li>
+			<li><a href="/empty/"><code>GET /empty/</code></a> &rarr; нет index и autoindex off (403)</li>
+			<li><a href="/old"><code>GET /old</code></a> &rarr; 301 на /about/</li>
+			<li><a href="/nonexistent.html"><code>GET /nonexistent.html</code></a> &rarr; своя страница 404</li>
+		</ul>
+
+		<h3>CGI</h3>
+		<ul>
+			<li><a href="/cgi-bin/hello.py"><code>/cgi-bin/hello.py</code></a> &rarr; python3</li>
+			<li><a href="/cgi-bin/env.py?name=slava&amp;x=1"><code>/cgi-bin/env.py?name=slava</code></a> &rarr; переменные окружения и cwd</li>
+			<li><a href="/cgi-sh/hello.sh?who=evaluator"><code>/cgi-sh/hello.sh</code></a> &rarr; bash</li>
+			<li><a href="/cgi-bin/infinite.py"><code>/cgi-bin/infinite.py</code></a> &rarr; бесконечный цикл, 504 через 5 с</li>
+			<li><a href="/cgi-bin/crash.py"><code>/cgi-bin/crash.py</code></a> &rarr; скрипт упал, 502</li>
+		</ul>
+		<form action="/cgi-bin/form.py" method="get">
+			GET-форма: <input name="name" value="slava"> <button>отправить</button>
+		</form>
+		<form action="/cgi-bin/form.py" method="post">
+			POST-форма: <input name="name" value="evaluator"> <button>отправить</button>
+		</form>
+
+		<h3>Загрузка и удаление (curl)</h3>
+		<ul>
+			<li><code>curl -i --data-binary @Makefile http://localhost:8080/uploads/Makefile.txt</code> &rarr; 201</li>
+			<li><a href="/uploads/"><code>GET /uploads/</code></a> &rarr; листинг загруженного</li>
+			<li><code>curl -i -X DELETE http://localhost:8080/uploads/Makefile.txt</code> &rarr; 204</li>
+			<li><code>curl -i -X POST http://localhost:8080/</code> &rarr; 405 + Allow: GET</li>
+			<li><code>curl -i -X PUT http://localhost:8080/</code> &rarr; 501</li>
+		</ul>
+
+		<h3>Другие серверы</h3>
+		<ul>
+			<li><a href="http://localhost:8081/"><code>:8081</code></a> &rarr; второй сайт, лимит тела 100 байт</li>
+			<li><a href="http://127.0.0.1:8082/"><code>127.0.0.1:8082</code></a> &rarr; только локальный интерфейс</li>
 		</ul>
 	</div>
 </body>

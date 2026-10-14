@@ -12,6 +12,8 @@
 #include "Route.hpp"
 #include "Server.hpp"
 
+static const char* const DEFAULT_CONFIG_PATH = "conf/default.conf";
+
 static std::string readFile(const char* path)
 {
 	std::ifstream file(path);
@@ -67,16 +69,18 @@ static std::vector<std::string> tokenize(const std::string& content)
 
 int main(int argc, char** argv)
 {
-	if (argc != 2)
+	// subject: "take a configuration file as argument, or use a default path"
+	if (argc > 2)
 	{
-		std::cerr << "Usage: " << argv[0] << " <config-file>" << std::endl;
+		std::cerr << "Usage: " << argv[0] << " [config-file]" << std::endl;
 		return 1;
 	}
+	const char* config_path = (argc == 2) ? argv[1] : DEFAULT_CONFIG_PATH;
 
 	std::vector<Server*> servers;
 	try
 	{
-		std::string content = readFile(argv[1]);
+		std::string content = readFile(config_path);
 		std::vector<std::string> tokens = tokenize(content);
 
 		ConfigParser parser(tokens);
@@ -94,7 +98,7 @@ int main(int argc, char** argv)
 		if (servers.empty())
 		{
 			throw std::runtime_error("No server blocks found in config file: "
-									 + std::string(argv[1]));
+									 + std::string(config_path));
 		}
 
 		checkDuplicateListens(servers);
