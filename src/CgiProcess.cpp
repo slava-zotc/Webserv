@@ -15,6 +15,29 @@
 #include "HttpUtils.hpp"
 #include "Server.hpp"
 
+// Наибольший fd, который может быть открыт у сервера: стандартный лимит
+// открытых файлов на процесс (ulimit -n). Точный лимит узнаётся через
+// getrlimit/sysconf, но их нет в списке разрешённых функций сабжекта.
+static const int MAX_INHERITED_FD = 1024;
+
+/**
+ * @brief Аналог closefrom(3): в процессе-ребёнке закрывает всё, что он
+ * унаследовал от сервера, кроме stdin/stdout/stderr.
+ *
+ * Иначе скрипт держит копии слушающих и клиентских сокетов и pipe других
+ * CGI. Пример: скрипт B унаследовал пишущий конец stdin скрипта A — тогда A
+ * не получит EOF на stdin, пока жив B (EOF наступает, только когда закрыты
+ * ВСЕ ссылки на пишущий конец). FD_CLOEXEC решил бы это при создании fd, но
+ * он ставится только через fcntl(F_SETFD), а сабжект разрешает лишь F_SETFL.
+ */
+static void close_inherited_fds()
+{
+	for (int fd = 3; fd < MAX_INHERITED_FD; ++fd)
+	{
+		close(fd);
+	}
+}
+
 CgiProcess::CgiProcess(void)
 	: pid_(-1),
 	  status_child_(0),
@@ -354,15 +377,7 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 		{
 			std::exit(EXIT_FAILURE);
 		}
-		// Закрываем ВСЁ, что унаследовано от сервера, кроме 0/1/2: pipe,
-		// слушающие и клиентские сокеты. Иначе, пока скрипт жив, у чужих
-		// клиентских сокетов остаётся лишняя ссылка и клиент не получает
-		// FIN, а у чужих pipe не наступает EOF. (Вместо FD_CLOEXEC: его
-		// можно поставить только через F_SETFD, которого нет в сабжекте.)
-		for (int fd = 3; fd < 1024; ++fd)
-		{
-			close(fd);
-		}
+		close_inherited_fds();
 		if (chdir(directory.c_str()) == -1)
 		{
 			std::exit(EXIT_FAILURE);

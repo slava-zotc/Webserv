@@ -19,6 +19,7 @@ public:
 		PARSING_START,
 		PARSING_HEADERS,
 		PARSING_BODY,
+		PARSING_CHUNKED,
 		PARSING_DONE,
 		PARSING_ERROR
 	};
@@ -49,6 +50,19 @@ private:
 	size_t max_body_size_;
 	int error_status_;
 	std::string query_string_;
+
+	// Разбор тела в chunked-кодировке (RFC 9112 §7.1)
+	enum ChunkState
+	{
+		CHUNK_SIZE,		 // ждём строку "<hex-размер>[;расширения]\r\n"
+		CHUNK_DATA,		 // читаем chunk_remaining_ байт данных
+		CHUNK_DATA_END,	 // после данных обязателен "\r\n"
+		CHUNK_TRAILER	 // после последнего (нулевого) чанка: трейлеры до пустой строки
+	};
+	ChunkState chunk_state_;
+	size_t chunk_remaining_;
+	void parse_chunked();
+	bool start_transfer_encoding();
 
 	void process_start_line(const std::string& line);
 	Methods convert_method_str(const std::string& method_str);
