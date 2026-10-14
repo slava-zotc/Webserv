@@ -130,6 +130,18 @@ must_fail("повтор директивы -> ошибка",
 must_fail("error_page без пути -> ошибка",
           "server { listen 8097; root @WWW@; error_page 404; location / { } }",
           "error_page")
+for name, text, err in (
+    ("директива вне server", "listen 8080;", "at top level"),
+    ("лишняя }", "}", "at top level"),
+    ("location в location", "server { listen 8097; root @WWW@; location / { location /x { } } }", "not allowed inside location"),
+    ("location без пути", "server { listen 8097; root @WWW@; location { } }", "location needs one path"),
+    ("неизвестная директива", "server { listen 8097; root @WWW@; location / { autoindx on; } }", "Unknown directive 'autoindx'"),
+    ("забыли ; перед }", "server { listen 8097; root @WWW@; location / { autoindex on } }", "Missing ';'"),
+    ("return без цели", "server { listen 8097; root @WWW@; location / { return 302; } }", "return: expected 2"),
+    ("пустой конфиг", "", "No server blocks"),
+):
+    must_fail(name + " -> ошибка", text, err)
+
 blocker = socket.socket(); blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 blocker.bind(("0.0.0.0", 8098)); blocker.listen(1)
 must_fail("порт занят другим процессом -> Address already in use",

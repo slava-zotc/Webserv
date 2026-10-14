@@ -146,7 +146,12 @@ CFG_Route buildCfgRoute(const ConfigBlock& block, const std::string& parentRoot)
 	}
 
 	it = block.directives.find("return");
-	if (it != block.directives.end() && it->second.size() >= 2)
+	if (it != block.directives.end() && it->second.size() != 2)
+	{
+		throw std::runtime_error("location " + cfg.prefix_
+			+ ": return: expected 2 arguments (code and target)");
+	}
+	if (it != block.directives.end())
 	{
 		std::stringstream ss(it->second[0]);
 		int code;

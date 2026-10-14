@@ -104,7 +104,15 @@ void HttpRequest::process_header_line(const std::string& line)
 		// Проверяем, есть ли Content-Length и не превышает ли он лимит
 		if (headers_.count("content-length") > 0)
 		{
-			std::stringstream ss(headers_["content-length"]);
+			// RFC 9110 §8.6: Content-Length = 1*DIGIT. Без этой проверки
+			// operator>> принял бы "+5" и " 5" как 5.
+			const std::string& cl = headers_["content-length"];
+			if (cl.empty() || cl.find_first_not_of("0123456789") != std::string::npos)
+			{
+				parsing_state_ = PARSING_ERROR;
+				return;
+			}
+			std::stringstream ss(cl);
 			long long tmp_content_length;
 			ss >> tmp_content_length;
 			if (ss.fail() || !ss.eof() || tmp_content_length < 0)
@@ -160,11 +168,31 @@ void HttpRequest::process_header_line(const std::string& line)
 
 void HttpRequest::process_start_line(const std::string& line)
 {
-	std::stringstream ss(line);
-	std::string method_str, path_str, version_str;
+	// RFC 9112 §3: request-line = method SP request-target SP HTTP-version,
+	// ровно по одному пробелу. Раньше >> съедал любые пробелы и молча
+	// отбрасывал лишние слова; теперь строка разбирается строго.
+	std::string::size_type sp1 = line.find(' ');
+	std::string::size_type sp2 =
+		(sp1 == std::string::npos) ? sp1 : line.find(' ', sp1 + 1);
+	if (sp2 == std::string::npos || line.find(' ', sp2 + 1) != std::string::npos)
+	{
+		parsing_state_ = PARSING_ERROR;
+		return;
+	}
+	std::string method_str = line.substr(0, sp1);
+	std::string path_str = line.substr(sp1 + 1, sp2 - sp1 - 1);
+	std::string version_str = line.substr(sp2 + 1);
 
-	ss >> method_str >> path_str >> version_str;
-	if (method_str.empty() || path_str.empty() || version_str.empty())
+	// Метод - token (RFC 9110 §9.1). В request-target не бывает пробелов и
+	// управляющих символов (RFC 3986 §2); сырой NUL здесь - 400. Байты >= 0x80
+	// пропускаем, как nginx: curl шлёт кириллицу в пути без %-кодирования.
+	bool bad_target = path_str.empty();
+	for (std::string::size_type i = 0; i < path_str.size(); ++i)
+	{
+		unsigned char c = static_cast<unsigned char>(path_str[i]);
+		if (c <= 0x20 || c == 0x7f) bad_target = true;
+	}
+	if (!is_token(method_str) || bad_target || version_str.empty())
 	{
 		parsing_state_ = PARSING_ERROR;
 		return;

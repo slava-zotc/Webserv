@@ -2,9 +2,28 @@
 
 #include <stdexcept>
 
+static bool isSpecial(const std::string& tok) {
+    return tok == "{" || tok == "}" || tok == ";";
+}
+
+// Какие директивы разрешены в каком блоке. Неизвестная директива - ошибка:
+// раньше опечатка вроде "autoindx on;" молча игнорировалась.
+static bool isKnownDirective(const std::string& block, const std::string& key) {
+    if (block == "server")
+        return key == "listen" || key == "root" || key == "error_page"
+            || key == "client_max_body_size";
+    return key == "root" || key == "allowed_methods" || key == "autoindex"
+        || key == "index" || key == "upload_enabled" || key == "upload_dir"
+        || key == "return" || key == "cgi";
+}
+
+// На верхнем уровне конфига допустимы только блоки server.
 std::vector<ConfigBlock> ConfigParser::parse() {
     std::vector<ConfigBlock> blocks;
     while (pos < tokens.size()) {
+        if (peek() != "server")
+            throw std::runtime_error("Unexpected '" + peek()
+                                     + "' at top level (expected 'server')");
         blocks.push_back(parseBlock());
     }
     return blocks;
@@ -27,17 +46,33 @@ std::string ConfigParser::advance() {
 
 ConfigBlock ConfigParser::parseBlock() {
     ConfigBlock block;
-    block.name = advance();              // e.g. "server" or "location"
+    block.name = advance();              // "server" или "location"
 
-    // optional argument before '{' (e.g. location's path, or "/kapouet")
+    // Аргумент перед '{': у location ровно один путь, у server - ничего.
     while (peek() != "{") {
+        if (isSpecial(peek()))
+            throw std::runtime_error("Unexpected '" + peek() + "' after '"
+                                     + block.name + "' (expected '{')");
         block.arg += (block.arg.empty() ? "" : " ") + advance();
     }
     advance(); // consume '{'
+    if (block.name == "server" && !block.arg.empty())
+        throw std::runtime_error("server block takes no arguments: " + block.arg);
+    if (block.name == "location"
+        && (block.arg.empty() || block.arg[0] != '/'
+            || block.arg.find(' ') != std::string::npos))
+        throw std::runtime_error("location needs one path starting with '/': '"
+                                 + block.arg + "'");
 
     while (peek() != "}") {
         if (isBlockKeyword(peek())) {
-            block.children.push_back(parseBlock()); // recurse for nested block
+            // Вложенность только server -> location (location в location
+            // и server в server раньше молча игнорировались).
+            if (block.name != "server" || peek() != "location")
+                throw std::runtime_error("'" + peek()
+                                         + "' block is not allowed inside "
+                                         + block.name);
+            block.children.push_back(parseBlock());
         } else {
             parseDirective(block);
         }
@@ -48,8 +83,17 @@ ConfigBlock ConfigParser::parseBlock() {
 
 void ConfigParser::parseDirective(ConfigBlock& block) {
     std::string key = advance();
+    if (isSpecial(key))
+        throw std::runtime_error("Unexpected '" + key + "' in " + block.name);
+    if (!isKnownDirective(block.name, key))
+        throw std::runtime_error("Unknown directive '" + key + "' in "
+                                 + block.name
+                                 + (block.arg.empty() ? "" : " " + block.arg));
     std::vector<std::string> values;
     while (peek() != ";") {
+        // "listen 8080 }" - забыли ';', иначе директива съела бы конец блока
+        if (isSpecial(peek()))
+            throw std::runtime_error("Missing ';' after directive '" + key + "'");
         values.push_back(advance());
     }
     advance(); // consume ';'

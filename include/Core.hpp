@@ -83,6 +83,17 @@ private:
 	std::map<int, ListeningSocket*> listening_sockets;
 
 	std::map<int, Server*> server_for_listening_fd;
+
+	/**
+	 * @brief Запасной fd на случай, когда fd у процесса закончились
+	 *
+	 * Если accept() падает с EMFILE, соединение остаётся в очереди, и poll()
+	 * сразу снова будит нас - сервер крутится вхолостую на 100% CPU.
+	 * Тогда закрываем запасной fd, принимаем лишнего клиента, сразу его
+	 * закрываем (очередь пустеет) и снова занимаем запасной fd.
+	 */
+	int reserve_fd;
+	void shed_connection(int listen_fd);
 	
 	/**
 	 * @brief Массив структур pollfd для poll()

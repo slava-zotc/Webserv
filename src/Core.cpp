@@ -1,5 +1,9 @@
 #include "Core.hpp"
 
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <cerrno>
 #include <csignal>
 #include <stdexcept>
 
@@ -35,7 +39,7 @@ void signal_handler(int signum)
  * (объект так и не был создан). Поэтому уже открытые сокеты удаляем сами
  * в catch, иначе их fd и память утекут.
  */
-Core::Core(std::vector<Server*>& servers)
+Core::Core(std::vector<Server*>& servers) : reserve_fd(-1)
 {
 	try
 	{
@@ -59,6 +63,25 @@ Core::Core(std::vector<Server*>& servers)
 		listening_sockets.clear();
 		throw;
 	}
+	reserve_fd = open("/dev/null", O_RDONLY);
+}
+
+/**
+ * @brief Отказ клиенту, когда у процесса кончились fd (EMFILE/ENFILE)
+ *
+ * errno после accept() читать можно: запрет subject - про read/write.
+ * Отвечать 503 здесь нельзя: писать в сокет можно только после poll().
+ * Клиент увидит закрытое соединение, а сервер не уйдёт в busy-loop.
+ */
+void Core::shed_connection(int listen_fd)
+{
+	if (reserve_fd == -1) return;
+	close(reserve_fd);
+	int fd = accept(listen_fd, NULL, NULL);
+	if (fd != -1) close(fd);
+	reserve_fd = open("/dev/null", O_RDONLY);
+	std::cerr << "webserv: out of file descriptors, connection dropped"
+			  << std::endl;
 }
 
 /**
@@ -141,6 +164,7 @@ int Core::accept_new_client(int indx)
 		client_sockets[client_fd] = conn;
 		return 1;
 	}
+	if (errno == EMFILE || errno == ENFILE) shed_connection(fds[indx].fd);
 	return -1;
 }
 
@@ -296,6 +320,7 @@ void Core::core_loop()
  */
 Core::~Core(void)
 {
+	if (reserve_fd != -1) close(reserve_fd);
 	// Удаляем все слушающие сокеты
 	for (std::map<int, ListeningSocket*>::iterator it =
 			 listening_sockets.begin();

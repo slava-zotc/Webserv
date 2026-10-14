@@ -400,6 +400,10 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 	}
 	if (pid_ == 0)
 	{
+		// Игнорирование SIGPIPE, в отличие от обработчиков, переживает
+		// execve. Возвращаем поведение по умолчанию, чтобы скрипт, чей
+		// вывод никто не читает, завершался, как обычная программа.
+		signal(SIGPIPE, SIG_DFL);
 		close(out_fd[0]);
 		close(in_fd[1]);
 		if (dup2(out_fd[1], STDOUT_FILENO) == -1
