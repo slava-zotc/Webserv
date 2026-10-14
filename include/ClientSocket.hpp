@@ -48,7 +48,10 @@ public:
 
 	void check_cgi_timeout(std::time_t now, const Server& server);
 
+	void check_client_timeout(std::time_t now, const Server& server);
+
 private:
+	static const int CLIENT_TIMEOUT = 10;	// Таймаут для клиента в секундах
 	enum State
 	{
 		READING,
@@ -65,6 +68,7 @@ private:
 	std::string::size_type partial_write;
 	State state_client;
 	CgiProcess* cgi_process;
+	std::time_t last_client_activity_time;
 	void start_cgi(const Route& route, const Server& server);
 };
 

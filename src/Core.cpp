@@ -193,7 +193,7 @@ void Core::core_loop()
 		}
 
 		// Таймаут poll() истёк, событий нет
-		
+
 		// Обрабатываем все готовые события
 		for (size_t i = 0; i < fds.size(); i++)
 		{
@@ -232,8 +232,11 @@ void Core::core_loop()
 			{
 				it->second.socket->handle_cgi_events(*(it->second.server));
 			}
-			if (!it->second.socket->is_ready_delete()) 
+			if (!it->second.socket->is_ready_delete())
+			{
 				it->second.socket->check_cgi_timeout(now, *(it->second.server));
+				it->second.socket->check_client_timeout(now, *(it->second.server));
+			}
 		}
 		// Находим готовые к удалению клиентские соединения
 		cleanup_closed_connections();

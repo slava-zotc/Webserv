@@ -18,7 +18,11 @@
  * Инициализирует клиентское соединение в начальном состоянии (READ_HEADERS).
  */
 ClientSocket::ClientSocket(int fd)
-	: socket_fd(fd), partial_write(0), state_client(READING), cgi_process(NULL)
+	: socket_fd(fd),
+	  partial_write(0),
+	  state_client(READING),
+	  cgi_process(NULL),
+	  last_client_activity_time(std::time(NULL))
 {
 }
 
@@ -82,6 +86,18 @@ bool ClientSocket::has_cgi() const
 {
 	return cgi_process != NULL;
 }
+
+void ClientSocket::check_client_timeout(std::time_t now, const Server& server)
+{
+	if (state_client == READING && (now - last_client_activity_time) > CLIENT_TIMEOUT)
+	{
+		std::cerr << "[ClientSocket] fd=" << socket_fd.get_fd()
+				  << ": client timeout exceeded, closing connection" << std::endl;
+		response_buffer = Router::apply_error_page(HttpResponse(408), server).serialize();
+		state_client = READY_SEND;  // Переводим в режим отправки ответа с ошибкой
+	}
+}
+
 /**
  * @brief Обрабатывает получение данных от клиента
  * @param server Сервер, к которому подключён этот клиент (сообщает Core)
@@ -101,6 +117,7 @@ void ClientSocket::handle_read(const Server& server)
 		return;
 	}
 	std::string recv_string(tmp_buffer, byte_recv);
+	last_client_activity_time = std::time(NULL);	// Обновляем время последней активности
 	try
 	{
 		// Лимит тела запроса — из конфига конкретного сервера
@@ -275,7 +292,8 @@ int ClientSocket::get_client_socket_fd() const
 
 void ClientSocket::check_cgi_timeout(std::time_t now, const Server& server)
 {
-	if (cgi_process && cgi_process->is_timeout(now, 5))  // 5 секунд таймаут для CGI
+	if (cgi_process
+		&& cgi_process->is_timeout(now, 5))	 // 5 секунд таймаут для CGI
 	{
 		std::cerr << "[Client Socket] CGI process timeout for fd="
 				  << socket_fd.get_fd() << std::endl;
