@@ -33,9 +33,10 @@ public:
 
     /**
      * @brief Принимает входящее клиентское соединение
+     * @param client_ip [out] IPv4-адрес клиента ("127.0.0.1") для REMOTE_ADDR
      * @return Файловый дескриптор нового клиентского сокета или -1 при ошибке
      */
-    int accept_conection();
+    int accept_conection(std::string& client_ip);
 
     /**
      * @brief Возвращает файловый дескриптор слушающего сокета

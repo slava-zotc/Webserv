@@ -2,7 +2,9 @@
 
 #include <dirent.h>
 
+#include <cerrno>
 #include <cstdio>
+#include <ctime>
 #include <sstream>
 
 /**
@@ -39,23 +41,49 @@ int Router::method_to_route_bit(HttpRequest::Methods method)
 	}
 }
 
+/**
+ * @brief Делит путь CGI-запроса на скрипт и PATH_INFO (RFC 3875 §4.1.5)
+ * @param path        Путь из запроса, например /cgi-bin/env.py/a/b
+ * @param ext         Расширение CGI из location, например .py
+ * @param script_name [out] /cgi-bin/env.py  (SCRIPT_NAME, §4.1.13)
+ * @param path_info   [out] /a/b             (PATH_INFO, §4.1.5)
+ * @return true, если в пути есть сегмент, оканчивающийся на ext
+ *
+ * Скрипт - первый сегмент пути, который заканчивается на ext; всё после
+ * него - «дополнительный путь» для скрипта. /cgi-bin/x.pyc не подходит:
+ * после ".py" должен идти '/' или конец строки.
+ */
+bool Router::split_cgi_path(const std::string& path, const std::string& ext,
+							std::string& script_name, std::string& path_info)
+{
+	if (ext.empty()) return false;
+
+	std::string::size_type pos = path.find(ext);
+	while (pos != std::string::npos)
+	{
+		std::string::size_type end = pos + ext.length();
+		if (end == path.length() || path[end] == '/')
+		{
+			script_name = path.substr(0, end);
+			path_info = path.substr(end);
+			return true;
+		}
+		pos = path.find(ext, pos + 1);
+	}
+	return false;
+}
+
 bool Router::is_cgi(const std::string& path, HttpRequest::Methods method,
 					const Route& route)
 {
-	const std::string& ext = route.get_extensions();
-
 	// Редирект важнее CGI: такой запрос обрабатывает handle_request.
 	if (route.get_has_redirect()) return false;
 
-	// У location не настроен CGI.
-	if (ext.empty()) return false;
-
-	// Сначала длины: иначе path.length() - ext.length() уйдёт в "минус",
-	// в size_t это огромное число, и compare бросит std::out_of_range.
-	if (path.length() < ext.length()) return false;
-
-	// Путь должен заканчиваться ровно на расширение.
-	if (path.compare(path.length() - ext.length(), ext.length(), ext) != 0)
+	// В пути должен быть сегмент с расширением CGI этого location
+	// (если CGI в location не настроен, ext пустой и split вернёт false).
+	std::string script_name;
+	std::string path_info;
+	if (!split_cgi_path(path, route.get_extensions(), script_name, path_info))
 		return false;
 
 	// Метод должен быть разрешён в этом location.
@@ -128,7 +156,8 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 		else
 		{
 			std::string path = resolve_upload_path(request.get_path(), *route);
-			response = handle_post_method(path, request.get_body());
+			response = handle_post_method(path, request.get_path(),
+											  request.get_body());
 		}
 	}
 	else if (request.get_method() == HttpRequest::DELETE)
@@ -334,27 +363,101 @@ HttpResponse Router::handle_get_method(const std::string& resolve_path,
 	return read_file_response(resolve_path);
 }
 
+/**
+ * @brief Код ответа по errno после неудачного open()
+ *
+ * errno здесь читать можно: запрет subject касается только read/write.
+ */
+static int open_error_status()
+{
+	if (errno == ENOENT || errno == ENOTDIR) return 404;  // нет каталога
+	if (errno == EACCES) return 403;					  // нет прав
+	if (errno == EISDIR) return 409;					  // это каталог
+	return 500;
+}
+
+/**
+ * @brief Создаёт в каталоге файл с новым именем upload_<время>_<n>
+ * @param dir  Каталог на диске
+ * @param name [out] Придуманное имя
+ * @return fd открытого файла или -1
+ *
+ * O_EXCL: open() откажет (EEXIST), если файл уже есть, - так два запроса
+ * в одну секунду не перезапишут друг друга, а получат разные имена.
+ */
+static int create_unique_file(const std::string& dir, std::string& name)
+{
+	static unsigned long counter = 0;
+
+	for (int attempt = 0; attempt < 100; ++attempt)
+	{
+		std::stringstream ss;
+		ss << "upload_" << std::time(NULL) << "_" << counter++;
+		name = ss.str();
+		std::string path = (dir[dir.size() - 1] == '/') ? dir + name
+														 : dir + "/" + name;
+		int fd = open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0644);
+		if (fd != -1 || errno != EEXIST) return fd;
+	}
+	return -1;
+}
+
+/**
+ * @brief Сохраняет тело POST в файл
+ * @param upload_path Путь на диске (upload_dir + хвост URL)
+ * @param url_path    Путь из запроса - для заголовка Location
+ * @param body        Тело запроса
+ *
+ * POST /uploads/a.txt -> файл a.txt (перезаписывается, если был).
+ * POST /uploads/      -> URL указывает на каталог, имя придумывает сервер.
+ *
+ * RFC 9110 §9.3.3 и §15.3.2: если POST создал ресурс, сервер SHOULD
+ * ответить 201 с Location - адресом нового ресурса.
+ */
 HttpResponse Router::handle_post_method(const std::string& upload_path,
+										const std::string& url_path,
 										const std::string& body)
 {
-	int fd = open(upload_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
-	if (fd == -1) return HttpResponse(500);
+	std::string file_path = upload_path;
+	std::string location = url_path;
+	int fd;
+
+	struct stat st;
+	if (stat(upload_path.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+	{
+		std::string name;
+		fd = create_unique_file(upload_path, name);
+		file_path = join_path(upload_path, name);
+		location = join_path(url_path, name);
+	}
+	else if (upload_path[upload_path.size() - 1] == '/')
+	{
+		return HttpResponse(404);  // URL на каталог, а каталога нет
+	}
+	else
+	{
+		fd = open(upload_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	}
+	if (fd == -1) return HttpResponse(open_error_status());
 
 	size_t total_written = 0;
 	while (total_written < body.size())
 	{
 		int tmp_write_byte = write(fd, body.c_str() + total_written,
 								   body.size() - total_written);
-		if (tmp_write_byte == -1)
+		if (tmp_write_byte <= 0)
 		{
 			close(fd);
+			std::remove(file_path.c_str());	 // не оставляем обрезанный файл
 			return HttpResponse(500);
 		}
 		total_written += tmp_write_byte;
 	}
 	close(fd);
 
-	return HttpResponse(201);
+	HttpResponse response(201);
+	response.set_header("Location", location);
+	return response;
 }
 
 HttpResponse Router::handle_delete_method(const std::string& resolve_path)

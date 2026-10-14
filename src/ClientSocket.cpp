@@ -14,15 +14,17 @@
 /**
  * @brief Конструктор ClientSocket
  * @param fd Файловый дескриптор клиентского сокета
+ * @param client_ip IPv4-адрес клиента (из accept)
  *
  * Инициализирует клиентское соединение в начальном состоянии (READ_HEADERS).
  */
-ClientSocket::ClientSocket(int fd)
+ClientSocket::ClientSocket(int fd, const std::string& client_ip)
 	: socket_fd(fd),
 	  partial_write(0),
 	  state_client(READING),
 	  cgi_process(NULL),
-	  last_client_activity_time(std::time(NULL))
+	  last_client_activity_time(std::time(NULL)),
+	  client_ip_(client_ip)
 {
 }
 
@@ -236,15 +238,16 @@ void ClientSocket::handle_cgi_events(const Server& server)
 
 void ClientSocket::start_cgi(const Route& route, const Server& server)
 {
-	std::cerr << "[Client Socket] Detected cgi " << request.get_path()
-			  << " query=" << request.get_query() << std::endl;
-	// TODO: добавить проверкуу на .. в пути
-	std::string resolve_path = Router::resolve_path(request.get_path(), route);
+	// /cgi-bin/env.py/a/b -> скрипт /cgi-bin/env.py, PATH_INFO /a/b.
+	// Путь уже декодирован и нормализован в HttpRequest (без "..").
+	std::string script_name;
+	std::string path_info;
+	Router::split_cgi_path(request.get_path(), route.get_extensions(),
+						   script_name, path_info);
+	std::string resolve_path = Router::resolve_path(script_name, route);
 	struct stat st;
 	if (stat(resolve_path.c_str(), &st) == -1 || !S_ISREG(st.st_mode))
 	{
-		std::cerr << "[Client Socket] cgi file not found [" << resolve_path
-				  << "]" << std::endl;
 		HttpResponse response =
 			Router::apply_error_page(HttpResponse(404), server);
 		response_buffer = response.serialize();
@@ -253,17 +256,15 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
 	{
 		std::vector<std::string> dir_and_filename =
 			CgiProcess::get_dir_and_filename(resolve_path);
-		std::cerr << "[Client Socket] get dir cgi [" << dir_and_filename[0]
-				  << "] and filename [" << dir_and_filename[1] << "]"
-				  << std::endl;
-		const std::vector<std::string> env =
-			CgiProcess::get_env_string(request, server, dir_and_filename[1]);
+		const std::vector<std::string> env = CgiProcess::get_env_string(
+			request, server, dir_and_filename[1], script_name, path_info,
+			client_ip_);
 		CgiProcess* cgi = new CgiProcess();
 		if (!cgi->execute_cgi(route.get_path_interpreter(), dir_and_filename[0],
 							  dir_and_filename[1], env, request.get_body()))
 		{
-			std::cerr << "[Client Socket] cgi execute failed [" << resolve_path
-					  << "]" << std::endl;
+			std::cerr << "webserv: cannot start CGI " << resolve_path
+					  << std::endl;
 			HttpResponse response =
 				Router::apply_error_page(HttpResponse(500), server);
 			response_buffer = response.serialize();

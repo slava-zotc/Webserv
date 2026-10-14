@@ -17,9 +17,10 @@ public:
 	~CgiProcess();
 	static std::vector<std::string> get_dir_and_filename(
 		const std::string& path);
-	static std::vector<std::string> get_env_string(const HttpRequest& reguest,
-												   const Server& server,
-												   const std::string& filename);
+	static std::vector<std::string> get_env_string(
+		const HttpRequest& request, const Server& server,
+		const std::string& filename, const std::string& script_name,
+		const std::string& path_info, const std::string& remote_addr);
 
 	bool execute_cgi(const std::string& path_interpreter,
 					 const std::string& directory, const std::string& filename,

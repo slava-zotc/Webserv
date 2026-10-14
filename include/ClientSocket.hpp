@@ -22,7 +22,7 @@ public:
 	};
 	~ClientSocket();
 
-	ClientSocket(int fd);
+	ClientSocket(int fd, const std::string& client_ip);
 
 	short get_ready_events() const;
 
@@ -73,6 +73,7 @@ private:
 	State state_client;
 	CgiProcess* cgi_process;
 	std::time_t last_client_activity_time;
+	std::string client_ip_;	///< адрес клиента для REMOTE_ADDR в CGI
 	void start_cgi(const Route& route, const Server& server);
 };
 

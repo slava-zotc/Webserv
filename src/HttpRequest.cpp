@@ -13,15 +13,49 @@
 // std::string произвольного размера через body_.append(...) в parse().
 static const size_t DEFAULT_MAX_BODY_SIZE = 10 * 1024 * 1024;  // 10 MiB
 
+// Лимиты на «голову» запроса. Без них клиент мог бы слать строку без \r\n
+// бесконечно, а internal_buffer_ рос бы, пока не кончится память.
+// RFC 9112 §3: рекомендуется поддерживать request-line не короче 8000 байт.
+static const size_t MAX_REQUEST_LINE = 8192;	// длиннее -> 414
+static const size_t MAX_HEADER_SECTION = 16384;	// все заголовки -> 431
+
 HttpRequest::HttpRequest(void)
 	: method_(UNKNOWN),
 	  parsing_state_(PARSING_START),
 	  content_length_(0),
 	  max_body_size_(DEFAULT_MAX_BODY_SIZE),
 	  error_status_(400),
+	  header_bytes_(0),
 	  chunk_state_(CHUNK_SIZE),
 	  chunk_remaining_(0)
 {
+}
+
+/**
+ * @brief Проверяет, не превышен ли лимит стартовой строки или заголовков
+ * @param pending Длина текущей строки (полной или ещё недочитанной)
+ * @return false, если лимит превышен (выставлены PARSING_ERROR и код)
+ *
+ * 414 URI Too Long - RFC 9110 §15.5.15 (и RFC 9112 §3: сервер MUST ответить
+ *     414 на request-target длиннее, чем он готов разбирать).
+ * 431 Request Header Fields Too Large - RFC 6585 §5.
+ */
+bool HttpRequest::check_head_limits(size_t pending)
+{
+	if (parsing_state_ == PARSING_START && pending > MAX_REQUEST_LINE)
+	{
+		error_status_ = 414;
+		parsing_state_ = PARSING_ERROR;
+		return false;
+	}
+	if (parsing_state_ == PARSING_HEADERS
+		&& header_bytes_ + pending > MAX_HEADER_SECTION)
+	{
+		error_status_ = 431;
+		parsing_state_ = PARSING_ERROR;
+		return false;
+	}
+	return true;
 }
 
 void HttpRequest::set_max_body_size(size_t max_body_size)
@@ -185,8 +219,13 @@ HttpRequest::ParsingState HttpRequest::parse(const std::string& data)
 		size_t pos = internal_buffer_.find("\r\n");
 		if (std::string::npos == pos)
 		{
+			// Строка ещё не дошла целиком: весь буфер - её начало.
+			check_head_limits(internal_buffer_.size());
 			break;
 		}
+		if (!check_head_limits(pos + 2)) break;
+		if (parsing_state_ == PARSING_HEADERS) header_bytes_ += pos + 2;
+
 		std::string line = internal_buffer_.substr(0, pos);
 		internal_buffer_.erase(0, pos + 2);
 		if (parsing_state_ == PARSING_START)

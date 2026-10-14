@@ -119,15 +119,35 @@ ListeningSocket::~ListeningSocket(void)
 }
 
 /**
+ * @brief IPv4-адрес в виде "a.b.c.d"
+ *
+ * inet_ntoa в subject не разрешён, поэтому собираем строку сами:
+ * ntohl переводит адрес в порядок байт хоста, старший байт - первое число.
+ */
+static std::string ipv4_to_string(const struct sockaddr_in& addr)
+{
+	unsigned long ip = ntohl(addr.sin_addr.s_addr);
+	std::stringstream ss;
+	ss << ((ip >> 24) & 0xFF) << "." << ((ip >> 16) & 0xFF) << "."
+	   << ((ip >> 8) & 0xFF) << "." << (ip & 0xFF);
+	return ss.str();
+}
+
+/**
  * @brief Принимает входящее клиентское соединение
+ * @param client_ip [out] Адрес клиента для CGI (REMOTE_ADDR)
  * @return Файловый дескриптор нового соединения или -1 при ошибке
  *
  * Новые клиентские соединения также устанавливаются в неблокирующий режим.
  */
-int ListeningSocket::accept_conection()
+int ListeningSocket::accept_conection(std::string& client_ip)
 {
-	// Принимаем соединение
-	int fd_client = accept(get_listen_socket_fd(), NULL, NULL);
+	struct sockaddr_in addr;
+	socklen_t addr_len = sizeof(addr);
+	std::memset(&addr, 0, sizeof(addr));
+
+	int fd_client =
+		accept(get_listen_socket_fd(), (struct sockaddr*)&addr, &addr_len);
 
 	// Ошибка accept() или non-blocking режим (нет данных)
 	if (fd_client < 0) return -1;
@@ -137,5 +157,6 @@ int ListeningSocket::accept_conection()
 		close(fd_client);
 		return -1;
 	}
+	client_ip = ipv4_to_string(addr);
 	return fd_client;
 }

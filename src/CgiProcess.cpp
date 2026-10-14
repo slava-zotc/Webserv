@@ -107,9 +107,17 @@ static std::string server_name(const HttpRequest& request,
 	return "localhost";
 }
 
-std::vector<std::string> CgiProcess::get_env_string(const HttpRequest& request,
-													const Server& server,
-													const std::string& filename)
+/**
+ * @brief Переменные окружения для скрипта (RFC 3875 §4.1)
+ * @param filename    Имя файла скрипта (относительно его каталога)
+ * @param script_name URL скрипта без PATH_INFO: /cgi-bin/env.py
+ * @param path_info   Хвост после скрипта: /a/b (или пусто)
+ * @param remote_addr IP клиента из accept()
+ */
+std::vector<std::string> CgiProcess::get_env_string(
+	const HttpRequest& request, const Server& server,
+	const std::string& filename, const std::string& script_name,
+	const std::string& path_info, const std::string& remote_addr)
 {
 	std::vector<std::string> result;
 	result.push_back("REQUEST_METHOD=" + request.get_str_method());
@@ -125,7 +133,10 @@ std::vector<std::string> CgiProcess::get_env_string(const HttpRequest& request,
 	ss.str("");
 	ss << server.get_port();
 	result.push_back("SERVER_PORT=" + ss.str());
-	result.push_back("SCRIPT_NAME=" + request.get_path());
+	result.push_back("SCRIPT_NAME=" + script_name);		  // §4.1.13
+	result.push_back("PATH_INFO=" + path_info);			  // §4.1.5
+	result.push_back("REMOTE_ADDR=" + remote_addr);		  // §4.1.8
+	result.push_back("SERVER_SOFTWARE=webserv/1.0");	  // §4.1.17
 	// RFC 3875 §4.1.14: SERVER_NAME - имя сервера, к которому обратился
 	// клиент; берём его из Host без порта, иначе из listen.
 	result.push_back("SERVER_NAME=" + server_name(request, server));

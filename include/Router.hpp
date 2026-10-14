@@ -18,6 +18,7 @@ public:
 										  const std::string& url_path,
 										  const Route& route);
 	static HttpResponse handle_post_method(const std::string& upload_path,
+										   const std::string& url_path,
 										   const std::string& body);
 	static HttpResponse handle_delete_method(const std::string& resolve_path);
 	static std::string resolve_path(const std::string& path,
@@ -27,6 +28,9 @@ public:
 
 	static bool is_cgi(const std::string& path, HttpRequest::Methods method,
                         const Route& route);
+	static bool split_cgi_path(const std::string& path, const std::string& ext,
+							   std::string& script_name,
+							   std::string& path_info);
 	/**
 	 * @brief Для ответа с кодом ошибки (>=400) и ещё пустым телом
 	 * подставляет тело страницы ошибки: сперва пробует файл из

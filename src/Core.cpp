@@ -131,11 +131,12 @@ int Core::accept_new_client(int indx)
 	if (it_listening == listening_sockets.end()) return 0;
 	// Это слушающий сокет - приём нового клиента
 
-	int client_fd = it_listening->second->accept_conection();
+	std::string client_ip;
+	int client_fd = it_listening->second->accept_conection(client_ip);
 	if (client_fd != -1)
 	{
 		ClientConnection conn;
-		conn.socket = new ClientSocket(client_fd);
+		conn.socket = new ClientSocket(client_fd, client_ip);
 		conn.server = server_for_listening_fd[fds[indx].fd];
 		client_sockets[client_fd] = conn;
 		return 1;
@@ -214,6 +215,8 @@ void Core::core_loop()
 		// Ошибка poll()
 		if (ret < 0)
 		{
+			// Ctrl+C прерывает poll() (EINTR): это штатный выход, не ошибка.
+			if (g_signal_status) break;
 			std::cerr << "ERROR Poll failed" << std::endl;
 			continue;
 		}
