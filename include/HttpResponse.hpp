@@ -9,8 +9,10 @@ class HttpResponse
 public:
 	HttpResponse(int status_code);
 	std::string serialize() const;
+	void serialize_to(std::string& out);
 	void set_header(const std::string& key, const std::string& value);
 	void set_body(const std::string& body);
+	void swap_body(std::string& body);
 	void set_status_code(int status_code);
 	bool has_header(const std::string& key) const;
 	int get_status_code() const;
@@ -28,6 +30,7 @@ private:
 	std::string http_version_;
 
 	std::string get_reason_phrase(int status_code);
+	std::string build_head(std::string::size_type body_size) const;
 	HttpResponse();
 };
 #endif	// !HTTP_RESPONSE

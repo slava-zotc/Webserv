@@ -14,7 +14,9 @@ static bool isKnownDirective(const std::string& block, const std::string& key) {
             || key == "client_max_body_size";
     return key == "root" || key == "allowed_methods" || key == "autoindex"
         || key == "index" || key == "upload_enabled" || key == "upload_dir"
-        || key == "return" || key == "cgi";
+        || key == "return" || key == "cgi" || key == "client_max_body_size"
+        || key == "cgi_methods" || key == "cgi_require_file"
+        || key == "cgi_timeout";
 }
 
 // На верхнем уровне конфига допустимы только блоки server.

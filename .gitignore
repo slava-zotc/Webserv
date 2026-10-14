@@ -7,6 +7,10 @@ Doxy*
 *md
 webserv
 test_split.cpp
+cgi_tester
+tester
+*.log
+__pycache__
 
 
 

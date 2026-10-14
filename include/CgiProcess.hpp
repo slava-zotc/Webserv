@@ -25,7 +25,7 @@ public:
 	bool execute_cgi(const std::string& path_interpreter,
 					 const std::string& directory, const std::string& filename,
 					 const std::vector<std::string>& env,
-					 const std::string& body);
+					 std::string& body);
 	bool is_output_done() const;
 	int get_fd_read() const;
 	int get_fd_write() const;
@@ -53,7 +53,7 @@ private:
 	int status_child_;
 	int fd_read_;
 	std::string buffer_output_;
-	std::time_t start_time_;
+	std::time_t last_activity_;	///< последний обмен данными с CGI (для таймаута)
 	int fd_write_;				// пишущий конец stdin скрипта (-1 = закрыт)
 	std::string body_;			// тело запроса, которое передаём в stdin
 	std::size_t body_offset_;	// сколько байт тела уже записано

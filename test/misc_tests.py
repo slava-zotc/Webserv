@@ -106,7 +106,7 @@ try:
     check("SERVER_NAME из Host без порта", env.get("SERVER_NAME") == "demo.local", env.get("SERVER_NAME"))
     r = raw(b"GET /cgi-bin/env.py HTTP/1.1\r\nHost: x\r\n\r\n")
     env = dict(l.split("=", 1) for l in body(r).decode().splitlines() if "=" in l)
-    check("без хвоста PATH_INFO пустой", env.get("PATH_INFO") == "", env.get("PATH_INFO"))
+    check("без хвоста PATH_INFO = полный путь (нужно cgi_tester)", env.get("PATH_INFO") == "/cgi-bin/env.py", env.get("PATH_INFO"))
     r = raw(b"GET /cgi-bin/env.pyc HTTP/1.1\r\nHost: x\r\n\r\n")
     check("/cgi-bin/env.pyc - не CGI (404 как статика)", status(r) == 404, r[:60])
     r = raw(b"GET /cgi-bin/nope.py/x HTTP/1.1\r\nHost: x\r\n\r\n")

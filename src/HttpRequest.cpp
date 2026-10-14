@@ -26,6 +26,7 @@ HttpRequest::HttpRequest(void)
 	  max_body_size_(DEFAULT_MAX_BODY_SIZE),
 	  error_status_(400),
 	  header_bytes_(0),
+	  paused_after_start_(false),
 	  chunk_state_(CHUNK_SIZE),
 	  chunk_remaining_(0)
 {
@@ -77,6 +78,10 @@ HttpRequest::Methods HttpRequest::convert_method_str(
 	else if (method_str == "DELETE")
 	{
 		return DELETE;
+	}
+	else if (method_str == "HEAD")
+	{
+		return HEAD;
 	}
 	else
 	{
@@ -259,6 +264,15 @@ HttpRequest::ParsingState HttpRequest::parse(const std::string& data)
 		if (parsing_state_ == PARSING_START)
 		{
 			if (!line.empty()) process_start_line(line);
+			// Путь уже известен, а заголовки (и Content-Length) ещё нет.
+			// Останавливаемся один раз, чтобы ClientSocket выбрал location
+			// и выставил его client_max_body_size; потом он вызовет parse("")
+			// и разбор продолжится с того же места (остаток в буфере).
+			if (parsing_state_ == PARSING_HEADERS && !paused_after_start_)
+			{
+				paused_after_start_ = true;
+				return parsing_state_;
+			}
 		}
 		else if (parsing_state_ == PARSING_HEADERS)
 		{
@@ -304,6 +318,14 @@ const std::string& HttpRequest::get_body() const
 	return body_;
 }
 
+/**
+ * @brief Отдаёт тело без копирования (после вызова body_ пустой)
+ */
+void HttpRequest::take_body(std::string& out)
+{
+	out.swap(body_);
+}
+
 HttpRequest::Methods HttpRequest::get_method() const
 {
 	return method_;
@@ -334,6 +356,8 @@ std::string HttpRequest::get_str_method() const
 			return std::string("POST");
 		case DELETE:
 			return std::string("DELETE");
+		case HEAD:
+			return std::string("HEAD");
 		default:
 			return std::string("UNKNOWN");
 	}

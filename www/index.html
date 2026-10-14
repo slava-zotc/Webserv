@@ -46,7 +46,7 @@
 			<li><a href="/about/"><code>GET /about/</code></a> &rarr; index.html вложенного каталога (200)</li>
 			<li><a href="/files/"><code>GET /files/</code></a> &rarr; autoindex: листинг каталога</li>
 			<li><a href="/files/data.json"><code>GET /files/data.json</code></a> &rarr; Content-Type: application/json</li>
-			<li><a href="/empty/"><code>GET /empty/</code></a> &rarr; нет index и autoindex off (403)</li>
+			<li><a href="/empty/"><code>GET /empty/</code></a> &rarr; нет index и autoindex off (404)</li>
 			<li><a href="/old"><code>GET /old</code></a> &rarr; 301 на /about/</li>
 			<li><a href="/nonexistent.html"><code>GET /nonexistent.html</code></a> &rarr; своя страница 404</li>
 		</ul>
@@ -79,7 +79,7 @@
 			<li><code>curl -i --data-binary @Makefile http://localhost:8080/uploads/Makefile.txt</code> &rarr; 201</li>
 			<li><a href="/uploads/"><code>GET /uploads/</code></a> &rarr; листинг загруженного</li>
 			<li><code>curl -i -X DELETE http://localhost:8080/uploads/Makefile.txt</code> &rarr; 204</li>
-			<li><code>curl -i -X POST http://localhost:8080/</code> &rarr; 405 + Allow: GET</li>
+			<li><code>curl -i -X POST http://localhost:8080/</code> &rarr; 405 + Allow: GET, HEAD</li>
 			<li><code>curl -i -X PUT http://localhost:8080/</code> &rarr; 501</li>
 		</ul>
 

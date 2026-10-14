@@ -24,7 +24,10 @@ ClientSocket::ClientSocket(int fd, const std::string& client_ip)
 	  state_client(READING),
 	  cgi_process(NULL),
 	  last_client_activity_time(std::time(NULL)),
-	  client_ip_(client_ip)
+	  client_ip_(client_ip),
+	  body_limit_set_(false),
+	  linger_start_(0),
+	  cgi_timeout_(0)
 {
 }
 
@@ -55,7 +58,7 @@ bool ClientSocket::is_ready_send() const
  */
 bool ClientSocket::is_reading_phase() const
 {
-	return state_client == READING;
+	return state_client == READING || state_client == LINGERING;
 }
 /**
  * @brief Проверяет, готов ли сокет к удалению
@@ -115,6 +118,11 @@ bool ClientSocket::has_cgi() const
 
 void ClientSocket::check_client_timeout(std::time_t now, const Server& server)
 {
+	if (state_client == LINGERING && (now - linger_start_) >= LINGER_TIMEOUT)
+	{
+		state_client = READY_DELETE;  // клиент так и не закрыл - закрываем сами
+		return;
+	}
 	if (state_client == READING && (now - last_client_activity_time) > CLIENT_TIMEOUT)
 	{
 		std::cerr << "[ClientSocket] fd=" << socket_fd.get_fd()
@@ -133,7 +141,7 @@ void ClientSocket::check_client_timeout(std::time_t now, const Server& server)
  */
 void ClientSocket::handle_read(const Server& server)
 {
-	char tmp_buffer[4096];
+	char tmp_buffer[65536];	// 64 КиБ: большие тела (100 МБ) читаются быстрее
 
 	int byte_recv = recv(socket_fd.get_fd(), tmp_buffer, sizeof(tmp_buffer), 0);
 	// Клиент рассоединился или ошибка
@@ -142,13 +150,29 @@ void ClientSocket::handle_read(const Server& server)
 		state_client = READY_DELETE;
 		return;
 	}
+	// Ответ на ошибку уже ушёл: остаток запроса просто выбрасываем.
+	if (state_client == LINGERING) return;
 	std::string recv_string(tmp_buffer, byte_recv);
 	last_client_activity_time = std::time(NULL);	// Обновляем время последней активности
 	try
 	{
-		// Лимит тела запроса — из конфига конкретного сервера
-		request.set_max_body_size(server.get_max_body_size());
 		request.parse(recv_string);
+		// parse() останавливается сразу после request-line: путь известен,
+		// тело ещё не читалось. Выбираем лимит: client_max_body_size из
+		// location, если он там задан, иначе из server. Затем продолжаем.
+		if (!body_limit_set_
+			&& request.get_parsing_state() != HttpRequest::PARSING_START)
+		{
+			body_limit_set_ = true;
+			const Route* limit_route =
+				Router::matching(request.get_path(), server.get_route());
+			if (limit_route && limit_route->has_max_body_size())
+				request.set_max_body_size(limit_route->get_max_body_size());
+			else
+				request.set_max_body_size(server.get_max_body_size());
+			if (request.get_parsing_state() == HttpRequest::PARSING_HEADERS)
+				request.parse("");
+		}
 		if (request.get_parsing_state() == HttpRequest::PARSING_DONE)
 		{
 			// TODO: подумать о том стоит ли хранить роут в клиент сокет и
@@ -165,7 +189,7 @@ void ClientSocket::handle_read(const Server& server)
 			else
 			{
 				HttpResponse response = Router::handle_request(request, server);
-				response_buffer = response.serialize();
+				response.serialize_to(response_buffer);	 // без копии тела
 			}
 		}
 		else if (request.get_parsing_state() == HttpRequest::PARSING_ERROR)
@@ -224,7 +248,7 @@ void ClientSocket::handle_cgi_events(const Server& server)
 	}
 	else if (cgi_result == CgiProcess::CGI_SUCCESS)
 	{
-		response_buffer = response.serialize();
+		response.serialize_to(response_buffer);	 // без копии тела
 		delete cgi_process;
 		cgi_process = NULL;
 		state_client = READY_SEND;
@@ -246,7 +270,9 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
 						   script_name, path_info);
 	std::string resolve_path = Router::resolve_path(script_name, route);
 	struct stat st;
-	if (stat(resolve_path.c_str(), &st) == -1 || !S_ISREG(st.st_mode))
+	bool exists =
+		stat(resolve_path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+	if (!exists && route.get_cgi_require_file())
 	{
 		HttpResponse response =
 			Router::apply_error_page(HttpResponse(404), server);
@@ -260,8 +286,11 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
 			request, server, dir_and_filename[1], script_name, path_info,
 			client_ip_);
 		CgiProcess* cgi = new CgiProcess();
+		// CONTENT_LENGTH уже в env, теперь тело можно отдать CGI без копии.
+		std::string body;
+		request.take_body(body);
 		if (!cgi->execute_cgi(route.get_path_interpreter(), dir_and_filename[0],
-							  dir_and_filename[1], env, request.get_body()))
+							  dir_and_filename[1], env, body))
 		{
 			std::cerr << "webserv: cannot start CGI " << resolve_path
 					  << std::endl;
@@ -273,6 +302,7 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
 		else
 		{
 			cgi_process = cgi;
+			cgi_timeout_ = route.get_cgi_timeout();
 			state_client = WAITING_CGI;
 			return;
 		}
@@ -287,6 +317,15 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
  */
 void ClientSocket::handle_write()
 {
+	// RFC 9110 §9.3.2: ответ на HEAD - те же статус и заголовки, что у GET
+	// (включая Content-Length), но без тела. Отрезаем тело здесь, в одном
+	// месте, перед первой отправкой: ответ мог собрать Router, CGI или
+	// обработчик ошибок, и всем им не нужно знать про HEAD.
+	if (partial_write == 0 && request.get_method() == HttpRequest::HEAD)
+	{
+		std::string::size_type end = response_buffer.find("\r\n\r\n");
+		if (end != std::string::npos) response_buffer.erase(end + 4);
+	}
 	// Отправляем неотправленную часть ответа
 	int byte_send =
 		send(socket_fd.get_fd(), response_buffer.c_str() + partial_write,
@@ -305,7 +344,20 @@ void ClientSocket::handle_write()
 	if (partial_write == response_buffer.size())
 	{
 		partial_write = 0;
-		state_client = READY_DELETE;  // Да это соединение достаточно
+		response_buffer.clear();
+		// Запрос отклонён посреди передачи (413, 400...): в сокете может
+		// остаться непрочитанное тело. close() с непрочитанными данными
+		// ядро превращает в RST, и RST может стереть наш ответ у клиента
+		// раньше, чем тот его прочитает. Поэтому «lingering close»: ещё
+		// до LINGER_TIMEOUT секунд читаем и выбрасываем остаток, пока
+		// клиент сам не закроет соединение (recv вернёт 0).
+		if (request.get_parsing_state() == HttpRequest::PARSING_ERROR)
+		{
+			state_client = LINGERING;
+			linger_start_ = std::time(NULL);
+		}
+		else
+			state_client = READY_DELETE;
 	}
 }
 /**
@@ -320,7 +372,7 @@ int ClientSocket::get_client_socket_fd() const
 void ClientSocket::check_cgi_timeout(std::time_t now, const Server& server)
 {
 	if (cgi_process
-		&& cgi_process->is_timeout(now, 5))	 // 5 секунд таймаут для CGI
+		&& cgi_process->is_timeout(now, cgi_timeout_))	 // cgi_timeout с без обмена
 	{
 		std::cerr << "[Client Socket] CGI process timeout for fd="
 				  << socket_fd.get_fd() << std::endl;

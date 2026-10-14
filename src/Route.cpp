@@ -12,7 +12,12 @@ Route::Route(const CFG_Route& config)
 	  upload_enabled_(config.upload_enabled_),
 	  upload_dir_(config.upload_dir_),
 	  extensions_(config.extensions_),
-	  path_interpreter_(config.path_interpreter_)
+	  path_interpreter_(config.path_interpreter_),
+	  has_max_body_size_(config.has_max_body_size_),
+	  max_body_size_(config.max_body_size_),
+	  cgi_methods_(config.cgi_methods_),
+	  cgi_require_file_(config.cgi_require_file_),
+	  cgi_timeout_(config.cgi_timeout_)
 {
 }
 
@@ -41,6 +46,11 @@ Route& Route::operator=(const Route& rhs)
 		upload_dir_ = rhs.upload_dir_;
 		extensions_ = rhs.extensions_;
 		path_interpreter_ = rhs.path_interpreter_;
+		has_max_body_size_ = rhs.has_max_body_size_;
+		max_body_size_ = rhs.max_body_size_;
+		cgi_methods_ = rhs.cgi_methods_;
+		cgi_require_file_ = rhs.cgi_require_file_;
+		cgi_timeout_ = rhs.cgi_timeout_;
 	}
 	return (*this);
 }
@@ -52,6 +62,31 @@ Route::~Route(void)
 const std::string& Route::get_prefix() const
 {
 	return prefix_;
+}
+
+int Route::get_cgi_timeout() const
+{
+	return cgi_timeout_;
+}
+
+bool Route::get_cgi_require_file() const
+{
+	return cgi_require_file_;
+}
+
+int Route::get_cgi_methods() const
+{
+	return cgi_methods_;
+}
+
+bool Route::has_max_body_size() const
+{
+	return has_max_body_size_;
+}
+
+unsigned long Route::get_max_body_size() const
+{
+	return max_body_size_;
 }
 
 const std::string& Route::get_root() const
@@ -113,6 +148,7 @@ static std::string methods_to_string(int mask)
 {
 	std::string result;
 	if (mask & Route::GET) result += "GET ";
+	if (mask & Route::HEAD) result += "HEAD ";
 	if (mask & Route::POST) result += "POST ";
 	if (mask & Route::DELETE) result += "DELETE ";
 	if (result.empty()) return "(none)";

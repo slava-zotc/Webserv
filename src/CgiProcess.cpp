@@ -43,7 +43,7 @@ CgiProcess::CgiProcess(void)
 	  status_child_(0),
 	  fd_read_(-1),
 	  buffer_output_(),
-	  start_time_(0),
+	  last_activity_(0),
 	  fd_write_(-1),
 	  body_(),
 	  body_offset_(0)
@@ -134,8 +134,18 @@ std::vector<std::string> CgiProcess::get_env_string(
 	ss << server.get_port();
 	result.push_back("SERVER_PORT=" + ss.str());
 	result.push_back("SCRIPT_NAME=" + script_name);		  // §4.1.13
-	result.push_back("PATH_INFO=" + path_info);			  // §4.1.5
+	// RFC 3875 §4.1.5: PATH_INFO - хвост пути после имени скрипта
+	// (/env.py/a/b -> /a/b). Если хвоста нет, по RFC это пустое значение,
+	// но cgi_tester из subject 42 тогда отвечает "PATH_INFO not found":
+	// он ждёт полный путь запроса. Так же поступают многие серверы для
+	// совместимости (php-cgi и др.), поэтому без хвоста передаём весь путь.
+	result.push_back("PATH_INFO="
+					 + (path_info.empty() ? request.get_path() : path_info));
 	result.push_back("REMOTE_ADDR=" + remote_addr);		  // §4.1.8
+	// REQUEST_URI нет в RFC 3875, но его ставят Apache и nginx (fastcgi),
+	// и на него опираются скрипты, в том числе cgi_tester из subject 42.
+	result.push_back("REQUEST_URI=" + request.get_path()
+					 + (request.get_query().empty() ? "" : "?" + request.get_query()));
 	result.push_back("SERVER_SOFTWARE=webserv/1.0");	  // §4.1.17
 	// RFC 3875 §4.1.14: SERVER_NAME - имя сервера, к которому обратился
 	// клиент; берём его из Host без порта, иначе из listen.
@@ -194,7 +204,7 @@ const std::string& CgiProcess::get_output() const
 
 bool CgiProcess::read_cgi_output()
 {
-	const size_t buffer_size = 4096;
+	const size_t buffer_size = 65536;
 	char buffer[buffer_size];
 	ssize_t bytes_read = read(fd_read_, buffer, buffer_size);
 	if (bytes_read == -1)
@@ -212,6 +222,7 @@ bool CgiProcess::read_cgi_output()
 	else
 	{
 		buffer_output_.append(buffer, bytes_read);
+		last_activity_ = std::time(NULL);
 		return true;
 	}
 }
@@ -253,7 +264,19 @@ int CgiProcess::process_output(HttpResponse& response)
 
 bool CgiProcess::handle_cgi_response(HttpResponse& response)
 {
-	std::istringstream response_stream(buffer_output_);
+	// Разбираем только заголовки: копировать в istringstream весь вывод
+	// (а он бывает 100 МБ) незачем. Конец заголовков - первая пустая
+	// строка, "\r\n\r\n" или "\n\n" (RFC 3875 §6.2 допускает оба вида).
+	std::string::size_type crlf = buffer_output_.find("\r\n\r\n");
+	std::string::size_type lf = buffer_output_.find("\n\n");
+	std::string::size_type body_start = std::string::npos;
+	if (crlf != std::string::npos && (lf == std::string::npos || crlf < lf))
+		body_start = crlf + 4;
+	else if (lf != std::string::npos)
+		body_start = lf + 2;
+	std::istringstream response_stream(body_start == std::string::npos
+										   ? buffer_output_
+										   : buffer_output_.substr(0, body_start));
 	std::string line;
 	bool has_status_line = false;
 	bool has_content_type = false;
@@ -266,11 +289,12 @@ bool CgiProcess::handle_cgi_response(HttpResponse& response)
 		if ((line == "\r" || line.empty()) && !response_stream.eof())
 		{
 			pos = response_stream.tellg();
-			if (pos != -1)
+			if (pos != -1 && body_start != std::string::npos)
 			{
-				std::string body;
-				body = buffer_output_.substr(pos);
-				response.set_body(body);
+				// Тело - всё после заголовков: сдвигаем и забираем буфер
+				// обменом, без копии.
+				buffer_output_.erase(0, body_start);
+				response.swap_body(buffer_output_);
 			}
 			has_header_end = true;
 			break;	// End of headers
@@ -363,7 +387,7 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 							 const std::string& directory,
 							 const std::string& filename,
 							 const std::vector<std::string>& env,
-							 const std::string& body)
+							 std::string& body)
 {
 	std::vector<std::string> argv(2);
 	argv[0] = path_interpreter;
@@ -438,7 +462,7 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 		return false;
 	}
 	fd_read_ = out_fd[0];
-	start_time_ = std::time(NULL);
+	last_activity_ = std::time(NULL);
 
 	// Тело запроса уходит скрипту через stdin (RFC 3875 §4.2) кусками, по
 	// мере того как poll() сообщает POLLOUT. Пустое тело — сразу EOF.
@@ -449,7 +473,7 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 	else
 	{
 		fd_write_ = in_fd[1];
-		body_ = body;
+		body_.swap(body);	// забираем тело запроса без копии (может быть 100 МБ)
 		body_offset_ = 0;
 	}
 	return true;
@@ -486,20 +510,24 @@ void CgiProcess::write_cgi_input()
 	if (written > 0)
 	{
 		body_offset_ += static_cast<std::size_t>(written);
+		last_activity_ = std::time(NULL);
 	}
 	if (written <= 0 || body_offset_ >= body_.size())
 	{
 		close(fd_write_);
 		fd_write_ = -1;
-		body_.clear();
+		std::string().swap(body_);	// clear() не отдаёт память, swap - отдаёт
 	}
 }
 
 bool CgiProcess::is_timeout(std::time_t now, int limit) const
 {
-	if (start_time_ == 0)
+	if (last_activity_ == 0)
 	{
 		return false;  // Process has not started yet
 	}
-	return (now - start_time_) > limit;
+	// Таймаут от бездействия, а не от запуска: скрипт, который честно
+	// принимает или отдаёт 100 МБ, может работать дольше limit, а
+	// зависший (infinite.py) молчит и будет убит через limit секунд.
+	return (now - last_activity_) > limit;
 }

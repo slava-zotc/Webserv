@@ -98,6 +98,16 @@ void HttpResponse::set_body(const std::string& body)
 	body_ = body;
 }
 
+/**
+ * @brief Забирает тело без копирования (обмен буферами)
+ *
+ * Ответ CGI может весить 100 МБ; set_body() сделал бы ещё одну копию.
+ */
+void HttpResponse::swap_body(std::string& body)
+{
+	body_.swap(body);
+}
+
 int HttpResponse::get_status_code() const
 {
 	return status_code_;
@@ -128,7 +138,11 @@ void HttpResponse::set_header(const std::string& key, const std::string& value)
 	headers_[key] = value;
 }
 
-std::string HttpResponse::serialize() const
+/**
+ * @brief Статус-строка и заголовки (с пустой строкой в конце), без тела
+ * @param body_size Длина тела для Content-Length
+ */
+std::string HttpResponse::build_head(std::string::size_type body_size) const
 {
 	std::stringstream ss;
 
@@ -139,15 +153,35 @@ std::string HttpResponse::serialize() const
 	{
 		ss << it->first << ": " << it->second << "\r\n";
 	}
-	ss << "Content-Length: " << body_.size() << "\r\n";
+	ss << "Content-Length: " << body_size << "\r\n";
 	// RFC 9112 §9.6: сервер, который закроет соединение после ответа,
 	// ДОЛЖЕН (SHOULD) сообщить об этом "Connection: close". Мы обслуживаем
 	// один запрос на соединение, поэтому шлём его всегда; так и клиент
 	// HTTP/1.1 не ждёт следующего ответа на том же сокете.
 	ss << "Connection: close\r\n";
 	ss << "\r\n";
-	ss << body_;
 	return ss.str();
+}
+
+std::string HttpResponse::serialize() const
+{
+	return build_head(body_.size()) + body_;
+}
+
+/**
+ * @brief Как serialize(), но без копии тела (тело переносится в out)
+ *
+ * serialize() создаёт новую строку «заголовки + тело»: для ответа CGI в
+ * 100 МБ это ещё 100 МБ памяти на каждого клиента. Здесь заголовки
+ * вставляются в начало уже существующего буфера тела (memmove внутри той
+ * же памяти), а потом буфер обменом уходит в out. После вызова тело
+ * ответа пустое.
+ */
+void HttpResponse::serialize_to(std::string& out)
+{
+	body_.insert(0, build_head(body_.size()));
+	out.swap(body_);
+	std::string().swap(body_);
 }
 
 HttpResponse::~HttpResponse()

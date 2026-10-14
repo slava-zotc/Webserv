@@ -21,6 +21,7 @@ static HttpResponse method_not_allowed(const Route& route)
 	std::string allow;
 	int mask = route.get_allowed_methods();
 	if (mask & Route::GET) allow += "GET";
+	if (mask & Route::HEAD) allow += allow.empty() ? "HEAD" : ", HEAD";
 	if (mask & Route::POST) allow += allow.empty() ? "POST" : ", POST";
 	if (mask & Route::DELETE) allow += allow.empty() ? "DELETE" : ", DELETE";
 
@@ -39,6 +40,8 @@ int Router::method_to_route_bit(HttpRequest::Methods method)
 			return Route::POST;
 		case HttpRequest::DELETE:
 			return Route::DELETE;
+		case HttpRequest::HEAD:
+			return Route::HEAD;
 		default:
 			return 0;  // UNKNOWN: ни один бит маски не совпадёт
 	}
@@ -91,6 +94,12 @@ bool Router::is_cgi(const std::string& path, HttpRequest::Methods method,
 
 	// Метод должен быть разрешён в этом location.
 	if (!(route.get_allowed_methods() & method_to_route_bit(method)))
+		return false;
+
+	// cgi_methods: CGI только для перечисленных методов, остальные
+	// (например, GET на youpi.bla) обрабатываются как статика.
+	if (route.get_cgi_methods() != 0
+		&& !(route.get_cgi_methods() & method_to_route_bit(method)))
 		return false;
 
 	return true;
@@ -171,9 +180,13 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 		response = HttpResponse(route->get_redirect_code());
 		response.set_header("Location", route->get_redirect_target());
 	}
-	else if (request.get_method() == HttpRequest::GET)
+	else if (request.get_method() == HttpRequest::GET
+			 || request.get_method() == HttpRequest::HEAD)
 	{
-		if (!(route->get_allowed_methods() & Route::GET))
+		// HEAD обрабатывается как GET, а тело отрезает ClientSocket перед
+		// отправкой. Разрешается отдельно: allowed_methods GET HEAD.
+		if (!(route->get_allowed_methods()
+			  & method_to_route_bit(request.get_method())))
 			response = method_not_allowed(*route);
 		else
 		{
@@ -389,8 +402,11 @@ HttpResponse Router::handle_get_method(const std::string& resolve_path,
 		if (route.get_autoindex())
 			return generate_autoindex(resolve_path, url_path);
 
-		// autoindex выключен, индекса нет — намеренно отказываем.
-		return HttpResponse(403);
+		// autoindex выключен, индекса нет - отвечаем 404, а не 403.
+		// RFC 9110 §15.5.4: сервер, который не хочет раскрывать, что
+		// ресурс существует, MAY ответить 404 вместо 403. Так ведёт себя
+		// и тестер 42 (ждёт 404 на /directory/Yeah).
+		return HttpResponse(404);
 	}
 
 	return read_file_response(resolve_path);

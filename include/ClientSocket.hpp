@@ -61,8 +61,10 @@ private:
 		READING,
 		WAITING_CGI,
 		READY_SEND,
+		LINGERING,	///< ответ на ошибку отправлен, дочитываем и выбрасываем остаток
 		READY_DELETE
 	};
+	static const int LINGER_TIMEOUT = 2;	// секунд на дочитывание остатка
 	ClientSocket();
 	ClientSocket(const ClientSocket& src);
 	ClientSocket& operator=(const ClientSocket& rhs);
@@ -75,6 +77,9 @@ private:
 	std::time_t last_client_activity_time;
 	std::string client_ip_;	///< адрес клиента для REMOTE_ADDR в CGI
 	void start_cgi(const Route& route, const Server& server);
+	bool body_limit_set_;	///< лимит тела уже выбран по location
+	std::time_t linger_start_;	///< когда начали LINGERING
+	int cgi_timeout_;			///< cgi_timeout из location текущего CGI
 };
 
 #endif	// CLIENT_SOCKET_HPP

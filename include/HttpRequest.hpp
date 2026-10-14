@@ -12,6 +12,7 @@ public:
 		GET,
 		POST,
 		DELETE,
+		HEAD,
 		UNKNOWN
 	};
 	enum ParsingState
@@ -30,6 +31,7 @@ public:
 	const std::string& get_path() const;
 	const std::string& get_version() const;
 	const std::string& get_body() const;
+	void take_body(std::string& out);
 	const std::string& get_query() const;
 	std::string get_str_method() const;
 	const std::map<std::string, std::string>& get_headers() const;
@@ -50,7 +52,8 @@ private:
 	size_t max_body_size_;
 	int error_status_;
 	std::string query_string_;
-	size_t header_bytes_;	///< сколько байт заголовков уже принято (лимит 431)
+	size_t header_bytes_;		///< сколько байт заголовков уже принято (лимит 431)
+	bool paused_after_start_;	///< parse() один раз остановился после request-line
 	bool check_head_limits(size_t pending);
 
 	// Разбор тела в chunked-кодировке (RFC 9112 §7.1)

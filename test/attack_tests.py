@@ -17,6 +17,16 @@ srv = subprocess.Popen([BIN], stdout=log, stderr=log, cwd=ROOT)
 time.sleep(1.0 if "vg" not in BIN else 4.0)
 results = []
 
+# Сначала убеждаемся, что сервер вообще запустился: иначе первая атака
+# выглядела бы как «краш», хотя сервер просто не стартовал.
+if srv.poll() is not None:
+    log.flush()
+    print("Сервер не запустился (rc=%s). Его вывод:" % srv.returncode)
+    print(open("/tmp/attack_srv.log").read().strip() or "<пусто>")
+    print("Частые причины: порт 8080 занят (pkill webserv), старый бинарник (make re),"
+          " не забраны conf/ или www/.")
+    sys.exit(2)
+
 def alive():
     try:
         s = socket.create_connection((HOST, PORT), timeout=5)

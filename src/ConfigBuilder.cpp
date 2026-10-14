@@ -54,6 +54,29 @@ static int parseErrorCode(const std::string& raw)
 	return code;
 }
 
+/*
+ * client_max_body_size: целое число байт >= 0. Только цифры: operator>>
+ * иначе принял бы "+5" и "10abc" -> частично.
+ */
+static unsigned long parseBodySize(const std::string& raw)
+{
+	if (raw.empty() || raw.size() > 18
+		|| raw.find_first_not_of("0123456789") != std::string::npos)
+	{
+		throw std::runtime_error("Invalid client_max_body_size: " + raw);
+	}
+	std::stringstream ss(raw);
+	unsigned long size;
+	ss >> size;
+	return size;
+}
+
+// Сколько секунд CGI может молчать (ничего не читать и не писать), прежде
+// чем мы его убьём и ответим 504. Для сравнения: fastcgi_read_timeout в
+// nginx по умолчанию 60 с. 5 с хватает для демо, но под нагрузкой (20
+// скриптов по 100 МБ) честно работающий CGI молчит дольше.
+static const int DEFAULT_CGI_TIMEOUT = 30;
+
 static void validateRoot(const std::string& root)
 {
 	struct stat st;
@@ -82,6 +105,8 @@ static int parseAllowedMethods(const std::vector<std::string>& values)
 			mask |= Route::POST;
 		else if (values[i] == "DELETE")
 			mask |= Route::DELETE;
+		else if (values[i] == "HEAD")
+			mask |= Route::HEAD;
 		else
 			throw std::runtime_error("Invalid method in allowed_methods: "
 									 + values[i]);
@@ -92,6 +117,8 @@ static int parseAllowedMethods(const std::vector<std::string>& values)
 CFG_Route buildCfgRoute(const ConfigBlock& block, const std::string& parentRoot)
 {
 	CFG_Route cfg = CFG_Route();
+	cfg.cgi_require_file_ = true;
+	cfg.cgi_timeout_ = DEFAULT_CGI_TIMEOUT;
 	cfg.prefix_ = block.arg;
 
 	std::map<std::string, std::vector<std::string> >::const_iterator it;
@@ -166,6 +193,59 @@ CFG_Route buildCfgRoute(const ConfigBlock& block, const std::string& parentRoot)
 		cfg.redirect_code_ = code;
 	}
 
+	// Лимит тела в location перекрывает лимит server (как в nginx):
+	// /post_body может принимать 100 байт, а соседний CGI - 100 МБ.
+	it = block.directives.find("client_max_body_size");
+	if (it != block.directives.end())
+	{
+		if (it->second.size() != 1)
+			throw std::runtime_error("location " + cfg.prefix_
+				+ ": client_max_body_size: expected 1 argument");
+		cfg.has_max_body_size_ = true;
+		cfg.max_body_size_ = parseBodySize(it->second[0]);
+	}
+
+	// cgi_require_file off;  - запускать CGI, даже если файла скрипта нет.
+	// По умолчанию (on) несуществующий скрипт - 404. Нужно для программ,
+	// которые сами являются CGI и файл не читают (cgi_tester из subject 42
+	// ждёт 200 на POST к несуществующему youpla.bla).
+	it = block.directives.find("cgi_require_file");
+	if (it != block.directives.end())
+	{
+		if (it->second.size() != 1)
+			throw std::runtime_error("location " + cfg.prefix_
+				+ ": cgi_require_file: expected on or off");
+		cfg.cgi_require_file_ = parseBool(it->second[0]);
+	}
+
+	// cgi_timeout <секунды>;  - сколько CGI может молчать до 504.
+	it = block.directives.find("cgi_timeout");
+	if (it != block.directives.end())
+	{
+		const std::vector<std::string>& v = it->second;
+		if (v.size() != 1 || v[0].empty() || v[0].size() > 6
+			|| v[0].find_first_not_of("0123456789") != std::string::npos)
+			throw std::runtime_error("location " + cfg.prefix_
+				+ ": cgi_timeout: expected a number of seconds");
+		std::stringstream ss(v[0]);
+		ss >> cfg.cgi_timeout_;
+		if (cfg.cgi_timeout_ < 1)
+			throw std::runtime_error("location " + cfg.prefix_
+				+ ": cgi_timeout must be at least 1 second");
+	}
+
+	// cgi_methods POST;  - CGI запускается только на эти методы, остальные
+	// разрешённые методы обрабатываются как обычно (GET отдаёт файл как
+	// статику). Без директивы CGI срабатывает на все разрешённые методы.
+	it = block.directives.find("cgi_methods");
+	if (it != block.directives.end())
+	{
+		cfg.cgi_methods_ = parseAllowedMethods(it->second);
+		if (cfg.cgi_methods_ == 0)
+			throw std::runtime_error("location " + cfg.prefix_
+				+ ": cgi_methods: expected at least one method");
+	}
+
 	it = block.directives.find("cgi");
 	if (it != block.directives.end())
 	{
@@ -182,6 +262,15 @@ CFG_Route buildCfgRoute(const ConfigBlock& block, const std::string& parentRoot)
 			throw std::runtime_error("location " + cfg.prefix_
             + ": cgi: invalid extension '" + extension
             + "' (must start with '.' and have at least one character after it)");
+		}
+		// Ребёнок CGI сначала делает chdir в каталог скрипта и только потом
+		// execve(интерпретатор): относительный путь к этому моменту уже
+		// указывал бы не туда. Поэтому требуем абсолютный.
+		if (path_interpreter[0] != '/')
+		{
+			throw std::runtime_error("location " + cfg.prefix_
+			+ ": cgi: interpreter path must be absolute: '"
+			+ path_interpreter + "'");
 		}
 		if (access(path_interpreter.c_str(), X_OK) == -1)
 		{
@@ -231,17 +320,11 @@ CFG_Server buildCfgServer(const ConfigBlock& block)
 	std::map<std::string, std::vector<std::string> >::const_iterator it;
 
 	it = block.directives.find("client_max_body_size");
-	if (it != block.directives.end() && !it->second.empty())
+	if (it != block.directives.end())
 	{
-		std::stringstream ss(it->second[0]);
-		long size;
-		ss >> size;
-		if (ss.fail() || !ss.eof() || size < 0)
-		{
-			throw std::runtime_error("Invalid client_max_body_size: "
-									 + it->second[0]);
-		}
-		cfg.max_body_size_ = size;
+		if (it->second.size() != 1)
+			throw std::runtime_error("client_max_body_size: expected 1 argument");
+		cfg.max_body_size_ = parseBodySize(it->second[0]);
 	}
 
 	// error_page <код> [<код> ...] <путь>;  можно повторять.
