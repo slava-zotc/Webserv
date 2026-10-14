@@ -1,10 +1,13 @@
 #include "CgiProcess.hpp"
 
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstdlib>
+#include <iostream>
 #include <sstream>
 
 #include "HttpRequest.hpp"
@@ -16,8 +19,11 @@ CgiProcess::CgiProcess(void)
 	: pid_(-1),
 	  status_child_(0),
 	  fd_read_(-1),
-	  buffer_output_(""),
-	  start_time_(0)
+	  buffer_output_(),
+	  start_time_(0),
+	  fd_write_(-1),
+	  body_(),
+	  body_offset_(0)
 {
 }
 
@@ -26,6 +32,10 @@ CgiProcess::~CgiProcess(void)
 	if (fd_read_ != -1)
 	{
 		close(fd_read_);
+	}
+	if (fd_write_ != -1)
+	{
+		close(fd_write_);
 	}
 	if (pid_ != -1)
 	{
@@ -299,7 +309,8 @@ int CgiProcess::wait_for_child()
 bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 							 const std::string& directory,
 							 const std::string& filename,
-							 const std::vector<std::string>& env)
+							 const std::vector<std::string>& env,
+							 const std::string& body)
 {
 	std::vector<std::string> argv(2);
 	argv[0] = path_interpreter;
@@ -321,6 +332,10 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 		close(out_fd[1]);
 		return false;
 	}
+	// Сбрасываем буферы до fork: иначе ребёнок унаследует недописанный
+	// вывод сервера, и std::exit() в нём напечатает его второй раз.
+	std::cout.flush();
+	std::cerr.flush();
 	pid_ = fork();
 	if (pid_ == -1)
 	{
@@ -339,8 +354,15 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 		{
 			std::exit(EXIT_FAILURE);
 		}
-		close(in_fd[0]);
-		close(out_fd[1]);
+		// Закрываем ВСЁ, что унаследовано от сервера, кроме 0/1/2: pipe,
+		// слушающие и клиентские сокеты. Иначе, пока скрипт жив, у чужих
+		// клиентских сокетов остаётся лишняя ссылка и клиент не получает
+		// FIN, а у чужих pipe не наступает EOF. (Вместо FD_CLOEXEC: его
+		// можно поставить только через F_SETFD, которого нет в сабжекте.)
+		for (int fd = 3; fd < 1024; ++fd)
+		{
+			close(fd);
+		}
 		if (chdir(directory.c_str()) == -1)
 		{
 			std::exit(EXIT_FAILURE);
@@ -348,24 +370,80 @@ bool CgiProcess::execute_cgi(const std::string& path_interpreter,
 		execve(path_interpreter.c_str(), &argv_array[0], &env_array[0]);
 		std::exit(EXIT_FAILURE);
 	}
+
+	// Родитель. Концы, которыми пользуется скрипт, закрываем сразу:
+	// пока они открыты у нас, скрипт не получит EOF на stdin.
+	close(in_fd[0]);
+	close(out_fd[1]);
+
+	// O_NONBLOCK ставим ТОЛЬКО на свои концы: флаг живёт в открытом файле
+	// (общем с процессом-ребёнком после fork), а не в дескрипторе.
+	if (fcntl(out_fd[0], F_SETFL, O_NONBLOCK) == -1
+		|| fcntl(in_fd[1], F_SETFL, O_NONBLOCK) == -1)
+	{
+		close(out_fd[0]);
+		close(in_fd[1]);
+		kill(pid_, SIGKILL);
+		waitpid(pid_, NULL, 0);
+		pid_ = -1;
+		return false;
+	}
+	fd_read_ = out_fd[0];
+	start_time_ = std::time(NULL);
+
+	// Тело запроса уходит скрипту через stdin (RFC 3875 §4.2) кусками, по
+	// мере того как poll() сообщает POLLOUT. Пустое тело — сразу EOF.
+	if (body.empty())
+	{
+		close(in_fd[1]);
+	}
 	else
 	{
-		fcntl(out_fd[0], F_SETFL, O_NONBLOCK);
-		fcntl(in_fd[1], F_SETFL, O_NONBLOCK);
-		close(in_fd[0]);
-		close(in_fd[1]);  // в этом примере мы не используем стандартный ввод
-						  // для CGI, поэтому закрываем его
-		close(out_fd[1]);
-		fd_read_ = out_fd[0];
-		start_time_ = std::time(NULL);
+		fd_write_ = in_fd[1];
+		body_ = body;
+		body_offset_ = 0;
 	}
-
 	return true;
 }
 
 int CgiProcess::get_fd_read() const
 {
 	return fd_read_;
+}
+
+int CgiProcess::get_fd_write() const
+{
+	return fd_write_;
+}
+
+/**
+ * @brief Один write() очередного куска тела запроса в stdin скрипта.
+ *
+ * Вызывается только когда poll() сообщил POLLOUT (или POLLERR/POLLHUP) на
+ * fd_write_. Когда тело передано целиком — закрываем pipe: скрипт получит EOF.
+ * Ошибка write() (обычно EPIPE: скрипт завершился, не дочитав stdin) — не
+ * ошибка сервера: RFC 3875 §4.2 разрешает скрипту не читать тело. Просто
+ * закрываем pipe, вывод скрипта по-прежнему читается и отдаётся клиенту.
+ * SIGPIPE игнорируется в Core::core_loop, поэтому сервер не упадёт.
+ */
+void CgiProcess::write_cgi_input()
+{
+	if (fd_write_ == -1)
+	{
+		return;
+	}
+	ssize_t written = write(fd_write_, body_.data() + body_offset_,
+							body_.size() - body_offset_);
+	if (written > 0)
+	{
+		body_offset_ += static_cast<std::size_t>(written);
+	}
+	if (written <= 0 || body_offset_ >= body_.size())
+	{
+		close(fd_write_);
+		fd_write_ = -1;
+		body_.clear();
+	}
 }
 
 bool CgiProcess::is_timeout(std::time_t now, int limit) const

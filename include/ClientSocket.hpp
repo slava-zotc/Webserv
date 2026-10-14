@@ -40,6 +40,10 @@ public:
 
 	int get_cgi_fd_read() const;
 
+	int get_cgi_fd_write() const;
+
+	void handle_cgi_write();
+
 	int get_client_socket_fd() const;
 
 	bool has_cgi() const;

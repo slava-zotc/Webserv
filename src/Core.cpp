@@ -65,7 +65,9 @@ void Core::fill_pollfds()
 {
 	fds.clear();
 	cgi_fd_to_client_fd.clear();
+	cgi_write_fd_to_client_fd.clear();
 	struct pollfd tmp_pollfd;
+	tmp_pollfd.revents = 0;
 	// Добавляем в poll() все слушающие сокеты
 	for (std::map<int, ListeningSocket*>::iterator it =
 			 listening_sockets.begin();
@@ -92,6 +94,15 @@ void Core::fill_pollfds()
 			cgi_fd_to_client_fd[cgi_fd] = it->first;
 			tmp_pollfd.fd = cgi_fd;
 			tmp_pollfd.events = POLLIN;
+			fds.push_back(tmp_pollfd);
+		}
+		// stdin CGI, пока в него не передано всё тело запроса (POST)
+		int cgi_wfd = it->second.socket->get_cgi_fd_write();
+		if (cgi_wfd != -1)
+		{
+			cgi_write_fd_to_client_fd[cgi_wfd] = it->first;
+			tmp_pollfd.fd = cgi_wfd;
+			tmp_pollfd.events = POLLOUT;
 			fds.push_back(tmp_pollfd);
 		}
 	}
@@ -198,6 +209,22 @@ void Core::core_loop()
 		for (size_t i = 0; i < fds.size(); i++)
 		{
 			if (ret == 0) break;
+			// stdin CGI: можно писать очередной кусок тела запроса
+			std::map<int, int>::iterator it_wfd =
+				cgi_write_fd_to_client_fd.find(fds[i].fd);
+			if (it_wfd != cgi_write_fd_to_client_fd.end())
+			{
+				if (fds[i].revents & (POLLOUT | POLLERR | POLLHUP))
+				{
+					std::map<int, ClientConnection>::iterator it_client =
+						client_sockets.find(it_wfd->second);
+					if (it_client != client_sockets.end())
+					{
+						it_client->second.socket->handle_cgi_write();
+					}
+				}
+				continue;
+			}
 			if (cgi_fd_to_client_fd.find(fds[i].fd)
 				!= cgi_fd_to_client_fd.end())
 			{

@@ -54,6 +54,8 @@ std::string HttpResponse::get_reason_phrase(int status_code)
 			return "Not Found";
 		case 405:
 			return "Method Not Allowed";
+		case 408:
+			return "Request Timeout";
 		case 409:
 			return "Conflict";
 		case 413:
@@ -68,6 +70,8 @@ std::string HttpResponse::get_reason_phrase(int status_code)
 			return "Service Unavailable";
 		case 504:
 			return "Gateway Timeout";
+		case 505:
+			return "HTTP Version Not Supported";
 		default:
 			return "Unknown";
 	}

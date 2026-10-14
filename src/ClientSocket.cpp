@@ -77,6 +77,30 @@ int ClientSocket::get_cgi_fd_read() const
 	return -1;
 }
 
+/**
+ * @brief Файловый дескриптор stdin скрипта, в который ещё пишется тело
+ * @return Дескриптор или -1, если CGI нет или тело уже передано
+ */
+int ClientSocket::get_cgi_fd_write() const
+{
+	if (cgi_process)
+	{
+		return cgi_process->get_fd_write();
+	}
+	return -1;
+}
+
+/**
+ * @brief poll() сообщил, что в stdin скрипта можно писать
+ */
+void ClientSocket::handle_cgi_write()
+{
+	if (cgi_process)
+	{
+		cgi_process->write_cgi_input();
+	}
+}
+
 bool ClientSocket::is_waiting_cgi_exit() const
 {
 	return cgi_process != NULL && cgi_process->is_output_done();
@@ -236,7 +260,7 @@ void ClientSocket::start_cgi(const Route& route, const Server& server)
 			CgiProcess::get_env_string(request, server, dir_and_filename[1]);
 		CgiProcess* cgi = new CgiProcess();
 		if (!cgi->execute_cgi(route.get_path_interpreter(), dir_and_filename[0],
-							  dir_and_filename[1], env))
+							  dir_and_filename[1], env, request.get_body()))
 		{
 			std::cerr << "[Client Socket] cgi execute failed [" << resolve_path
 					  << "]" << std::endl;
@@ -266,8 +290,10 @@ void ClientSocket::handle_write()
 	int byte_send =
 		send(socket_fd.get_fd(), response_buffer.c_str() + partial_write,
 			 response_buffer.size() - partial_write, 0);
-	// Ошибка жати
-	if (byte_send == -1)
+	// -1 — ошибка, 0 — ничего не отправлено при непустом буфере: в обоих
+	// случаях соединение бесполезно, клиента удаляем (так требует чек-лист:
+	// проверять и -1, и 0).
+	if (byte_send <= 0)
 	{
 		state_client = READY_DELETE;
 		return;

@@ -71,7 +71,12 @@ private:
 	/**
 	 * @brief Карта соответствия CGI fd -> client fd
 	 */
-	std::map<int, int> cgi_fd_to_client_fd;	///< Карта соответствия CGI fd -> client fd
+	std::map<int, int> cgi_fd_to_client_fd;
+
+	/**
+	 * @brief Карта соответствия fd stdin CGI (пишем тело) -> client fd
+	 */
+	std::map<int, int> cgi_write_fd_to_client_fd;	///< Карта соответствия CGI fd -> client fd
 
 	/**
 	 * @brief Карта активных клиентских соединений (fd -> ClientConnection)

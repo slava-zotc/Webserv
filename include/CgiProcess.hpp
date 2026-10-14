@@ -23,9 +23,12 @@ public:
 
 	bool execute_cgi(const std::string& path_interpreter,
 					 const std::string& directory, const std::string& filename,
-					 const std::vector<std::string>& env);
+					 const std::vector<std::string>& env,
+					 const std::string& body);
 	bool is_output_done() const;
 	int get_fd_read() const;
+	int get_fd_write() const;
+	void write_cgi_input();
 	int get_status() const;
 	bool handle_cgi_response(HttpResponse& response);
 	int process_output(HttpResponse& response);
@@ -50,6 +53,9 @@ private:
 	int fd_read_;
 	std::string buffer_output_;
 	std::time_t start_time_;
+	int fd_write_;				// пишущий конец stdin скрипта (-1 = закрыт)
+	std::string body_;			// тело запроса, которое передаём в stdin
+	std::size_t body_offset_;	// сколько байт тела уже записано
 };
 
 #endif	// CGI_PROCESS_HPP

@@ -73,14 +73,30 @@ for script, want, check, desc in CASES:
     passed += ok
     print("%s %-18s %-40s%s" % ("OK  " if ok else "FAIL", script, desc, note))
 
-# POST: тело доходит до скрипта (заработает после пункта 5)
-try:
-    code, headers, body = request("/cgi-bin/echo_body.py", b"hello post")
-    ok = code == 200 and body == b"hello post"
-    print("%s %-18s %-40s%s" % ("OK  " if ok else "TODO", "echo_body.py", "POST-тело вернулось (пункт 5)",
-                                "" if ok else "  (получено %d, тело %r)" % (code, body[:40])))
-except Exception as e:  # noqa: BLE001
-    print("TODO echo_body.py       POST (пункт 5)  (%s)" % e)
+# POST: тело запроса уходит скрипту в stdin (пункт 5, RFC 3875 §4.2)
+POST_CASES = [
+    ("echo_body.py",       b"hello post",           lambda b, body: b == body,                 "маленькое тело вернулось"),
+    ("echo_body.py",       b"A" * 500000,           lambda b, body: b == body,                 "500 КБ тела вернулись целиком"),
+    ("write_then_read.py", b"B" * 300000,           lambda b, body: b.endswith(b"got=300000\n"), "чтение и запись одновременно"),
+    ("hello.py",           b"C" * 300000,           lambda b, body: b"Hello" in b,             "скрипт не читает stdin -> 200"),
+]
+for script, body, check, desc in POST_CASES:
+    try:
+        code, headers, rbody = request("/cgi-bin/" + script, body)
+        ok = bool(code == 200 and check(rbody, body))
+        note = "" if ok else "  (код %d, тело %d байт)" % (code, len(rbody))
+    except Exception as e:  # noqa: BLE001
+        ok, note = False, "  (%s)" % e
+    CASES.append(None)
+    passed += ok
+    print("%s %-18s %-40s%s" % ("OK  " if ok else "FAIL", script, "POST: " + desc, note))
+
+# GET к тому же скрипту: тела нет, stdin сразу EOF
+code, _, rbody = request("/cgi-bin/echo_body.py")
+ok = code == 200 and rbody == b""
+CASES.append(None)
+passed += ok
+print("%s %-18s %-40s%s" % ("OK  " if ok else "FAIL", "echo_body.py", "GET: пустой stdin", "" if ok else "  (код %d)" % code))
 
 # Сервер жив после всех тестов? (POST в CGI без stdin может повесить весь сервер)
 try:
