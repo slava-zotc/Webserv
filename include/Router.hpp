@@ -20,6 +20,10 @@ public:
 	static HttpResponse handle_post_method(const std::string& upload_path,
 										   const std::string& url_path,
 										   const std::string& body);
+	static HttpResponse handle_multipart_upload(const std::string& upload_dir,
+												const std::string& url_path,
+												const std::string& body,
+												const std::string& boundary);
 	static HttpResponse handle_delete_method(const std::string& resolve_path);
 	static std::string resolve_path(const std::string& path,
 									const Route& route);

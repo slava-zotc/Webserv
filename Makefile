@@ -21,7 +21,8 @@ COMMON_SRCS = \
 	$(SRC_DIR)/ConvigParser.cpp \
 	$(SRC_DIR)/ConfigBuilder.cpp \
 	$(SRC_DIR)/CgiProcess.cpp \
-	$(SRC_DIR)/HttpUtils.cpp
+	$(SRC_DIR)/HttpUtils.cpp \
+	$(SRC_DIR)/Multipart.cpp
 
 SRCS = $(SRC_DIR)/main.cpp $(COMMON_SRCS)
 OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)

@@ -1,7 +1,10 @@
 #include "Router.hpp"
 
+#include "Multipart.hpp"
+
 #include <dirent.h>
 
+#include <cctype>
 #include <cerrno>
 #include <cstdio>
 #include <ctime>
@@ -114,6 +117,37 @@ std::string Router::resolve_upload_path(const std::string& path,
 	return upload_path;
 }
 
+/**
+ * @brief POST с включённой загрузкой: multipart-форма или «сырое» тело
+ *
+ * multipart/form-data (форма в браузере, curl -F) - разбираем на части и
+ * сохраняем файлы; любой другой Content-Type - тело целиком в файл.
+ */
+static HttpResponse handle_post(const HttpRequest& request,
+								const std::string& upload_path)
+{
+	const std::map<std::string, std::string>& headers = request.get_headers();
+	std::map<std::string, std::string>::const_iterator it =
+		headers.find("content-type");
+
+	if (it != headers.end())
+	{
+		std::string lower = it->second;
+		for (std::string::size_type i = 0; i < lower.size(); ++i)
+			lower[i] = std::tolower(static_cast<unsigned char>(lower[i]));
+		if (lower.compare(0, 19, "multipart/form-data") == 0)
+		{
+			std::string boundary;
+			if (!get_multipart_boundary(it->second, boundary))
+				return HttpResponse(400);  // multipart без boundary
+			return Router::handle_multipart_upload(
+				upload_path, request.get_path(), request.get_body(), boundary);
+		}
+	}
+	return Router::handle_post_method(upload_path, request.get_path(),
+									  request.get_body());
+}
+
 const HttpResponse Router::handle_request(const HttpRequest& request,
 										  const Server& server)
 {
@@ -156,8 +190,7 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 		else
 		{
 			std::string path = resolve_upload_path(request.get_path(), *route);
-			response = handle_post_method(path, request.get_path(),
-											  request.get_body());
+			response = handle_post(request, path);
 		}
 	}
 	else if (request.get_method() == HttpRequest::DELETE)
@@ -377,6 +410,47 @@ static int open_error_status()
 }
 
 /**
+ * @brief Записывает данные в открытый файл целиком и закрывает его
+ * @return false при ошибке write (недописанный файл удаляется)
+ *
+ * Это обычный файл на диске, а не сокет: subject разрешает работать
+ * с файлами без poll(). Проверяем и -1, и 0.
+ */
+static bool write_and_close(int fd, const std::string& data,
+							const std::string& path)
+{
+	size_t total_written = 0;
+	while (total_written < data.size())
+	{
+		int n = write(fd, data.c_str() + total_written,
+					  data.size() - total_written);
+		if (n <= 0)
+		{
+			close(fd);
+			std::remove(path.c_str());	// не оставляем обрезанный файл
+			return false;
+		}
+		total_written += n;
+	}
+	close(fd);
+	return true;
+}
+
+static std::string html_escape(const std::string& s)
+{
+	std::string out;
+	for (std::string::size_type i = 0; i < s.size(); ++i)
+	{
+		if (s[i] == '<') out += "&lt;";
+		else if (s[i] == '>') out += "&gt;";
+		else if (s[i] == '&') out += "&amp;";
+		else if (s[i] == '"') out += "&quot;";
+		else out += s[i];
+	}
+	return out;
+}
+
+/**
  * @brief Создаёт в каталоге файл с новым именем upload_<время>_<n>
  * @param dir  Каталог на диске
  * @param name [out] Придуманное имя
@@ -439,24 +513,73 @@ HttpResponse Router::handle_post_method(const std::string& upload_path,
 		fd = open(upload_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
 	}
 	if (fd == -1) return HttpResponse(open_error_status());
-
-	size_t total_written = 0;
-	while (total_written < body.size())
-	{
-		int tmp_write_byte = write(fd, body.c_str() + total_written,
-								   body.size() - total_written);
-		if (tmp_write_byte <= 0)
-		{
-			close(fd);
-			std::remove(file_path.c_str());	 // не оставляем обрезанный файл
-			return HttpResponse(500);
-		}
-		total_written += tmp_write_byte;
-	}
-	close(fd);
+	if (!write_and_close(fd, body, file_path)) return HttpResponse(500);
 
 	HttpResponse response(201);
 	response.set_header("Location", location);
+	return response;
+}
+
+/**
+ * @brief Сохраняет файлы из multipart/form-data (RFC 7578)
+ * @param upload_dir Каталог на диске (форма шлёт POST на /uploads/)
+ * @param url_path   URL каталога - для Location и ссылок в ответе
+ * @param body       Тело запроса
+ * @param boundary   Разделитель из Content-Type
+ *
+ * Сначала проверяем ВСЕ части (формат, имена), потом пишем: так битый
+ * запрос не оставит на диске половину файлов. Поля без filename (обычные
+ * <input type="text">) пропускаем. Файл с таким именем перезаписывается.
+ */
+HttpResponse Router::handle_multipart_upload(const std::string& upload_dir,
+											 const std::string& url_path,
+											 const std::string& body,
+											 const std::string& boundary)
+{
+	struct stat st;
+	if (stat(upload_dir.c_str(), &st) == -1) return HttpResponse(404);
+	if (!S_ISDIR(st.st_mode)) return HttpResponse(409);	 // нужен каталог
+
+	std::vector<MultipartPart> parts;
+	if (!parse_multipart(body, boundary, parts)) return HttpResponse(400);
+
+	std::vector<const MultipartPart*> files;
+	std::vector<std::string> names;
+	for (size_t i = 0; i < parts.size(); ++i)
+	{
+		// Пустой filename - браузер так шлёт <input type="file"> без файла.
+		if (parts[i].filename.empty()) continue;
+		std::string name = sanitize_filename(parts[i].filename);
+		if (name.empty()) return HttpResponse(400);
+		files.push_back(&parts[i]);
+		names.push_back(name);
+	}
+	if (files.empty()) return HttpResponse(400);  // нечего сохранять
+
+	std::string list;
+	for (size_t i = 0; i < files.size(); ++i)
+	{
+		std::string path = join_path(upload_dir, names[i]);
+		int fd = open(path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+		if (fd == -1) return HttpResponse(open_error_status());
+		if (!write_and_close(fd, files[i]->data, path))
+			return HttpResponse(500);
+
+		std::stringstream size;
+		size << files[i]->data.size();
+		std::string url = html_escape(join_path(url_path, names[i]));
+		list += "<li><a href=\"" + url + "\">" + html_escape(names[i])
+				+ "</a> (" + size.str() + " bytes)</li>";
+	}
+
+	// RFC 9110 §15.3.2: 201 + Location нового ресурса. Файлов может быть
+	// несколько - в Location первый, полный список в теле.
+	HttpResponse response(201);
+	response.set_header("Location", join_path(url_path, names[0]));
+	response.set_header("Content-Type", "text/html");
+	response.set_body("<html><body><h1>Uploaded</h1><ul>" + list
+					  + "</ul><a href=\"" + html_escape(url_path)
+					  + "\">back to directory</a></body></html>");
 	return response;
 }
 

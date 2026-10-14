@@ -66,6 +66,14 @@
 			POST-форма: <input name="name" value="evaluator"> <button>отправить</button>
 		</form>
 
+		<h3>Загрузка файлов</h3>
+		<form action="/uploads/" method="post" enctype="multipart/form-data">
+			multipart-форма: <input type="file" name="file" multiple> <button>загрузить</button>
+		</form>
+		<ul>
+			<li><code>curl -i -F "file=@Makefile" http://localhost:8080/uploads/</code> &rarr; 201, файл <code>Makefile</code></li>
+		</ul>
+
 		<h3>Загрузка и удаление (curl)</h3>
 		<ul>
 			<li><code>curl -i --data-binary @Makefile http://localhost:8080/uploads/Makefile.txt</code> &rarr; 201</li>
