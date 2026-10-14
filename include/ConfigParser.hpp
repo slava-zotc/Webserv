@@ -2,17 +2,23 @@
 #define CONFIG_PARSER_HPP
 
 #include <map>
-#include <vector>
 #include <string>
+#include <vector>
 
-struct ConfigBlock {
-	std::string name;                        // e.g. "server", "location"
-	std::string arg;                         // e.g. "/kapouet" for location
-	std::map<std::string, std::vector<std::string> > directives; // key -> values
-	std::vector<ConfigBlock> children;       // nested blocks (server -> location)
+struct ConfigBlock
+{
+	std::string name;  // e.g. "server", "location"
+	std::string arg;   // e.g. "/kapouet" for location
+	std::map<std::string, std::vector<std::string> >
+		directives;						// key -> values
+	std::vector<ConfigBlock> children;	// nested blocks (server -> location)
+	// error_page может встречаться несколько раз, поэтому каждое вхождение
+	// хранится отдельно (в directives повтор бы перезаписал предыдущее).
+	std::vector<std::vector<std::string> > error_pages;
 };
 
-class ConfigParser {
+class ConfigParser
+{
 public:
 	ConfigParser(const std::vector<std::string>& toks);
 	~ConfigParser();
@@ -30,7 +36,7 @@ private:
 	bool isBlockKeyword(const std::string& tok);
 
 	ConfigParser();
-	ConfigParser(const ConfigParser & other);
+	ConfigParser(const ConfigParser& other);
 	ConfigParser& operator=(const ConfigParser& other);
 };
 

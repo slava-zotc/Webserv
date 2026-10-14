@@ -2,8 +2,10 @@
 
 #include <sys/stat.h>
 
+#include <map>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 static int parsePort(const std::string& raw)
 {
@@ -15,6 +17,41 @@ static int parsePort(const std::string& raw)
 		throw std::runtime_error("Invalid port in listen directive: " + raw);
 	}
 	return port;
+}
+
+/*
+ * listen принимает "порт" или "хост:порт" (subject: "interface:port").
+ * Без хоста слушаем все интерфейсы - 0.0.0.0, как nginx.
+ * Сам хост здесь не резолвится: это делает ListeningSocket через
+ * getaddrinfo, там же будет понятная ошибка, если имя неизвестно.
+ */
+static void parseListen(const std::string& raw, std::string& host, int& port)
+{
+	std::string::size_type colon = raw.rfind(':');
+	if (colon == std::string::npos)
+	{
+		host = "0.0.0.0";
+		port = parsePort(raw);
+		return;
+	}
+	host = raw.substr(0, colon);
+	if (host.empty())
+	{
+		throw std::runtime_error("Empty host in listen directive: " + raw);
+	}
+	port = parsePort(raw.substr(colon + 1));
+}
+
+static int parseErrorCode(const std::string& raw)
+{
+	std::stringstream ss(raw);
+	int code;
+	ss >> code;
+	if (ss.fail() || !ss.eof() || code < 400 || code > 599)
+	{
+		throw std::runtime_error("Invalid error_page code: " + raw);
+	}
+	return code;
 }
 
 static void validateRoot(const std::string& root)
@@ -158,13 +195,23 @@ CFG_Server buildCfgServer(const ConfigBlock& block)
 {
 	CFG_Server cfg = CFG_Server();
 
+	if (!block.directives.count("listen"))
+		throw std::runtime_error("server: missing listen directive");
+	if (!block.directives.count("root"))
+		throw std::runtime_error("server: missing root directive");
+
 	const std::vector<std::string>& listenValues =
 		block.directives.at("listen");
 	if (listenValues.empty())
 	{
 		throw std::runtime_error("Empty listen directive");
 	}
-	cfg.port_ = parsePort(listenValues[0]);
+	if (listenValues.size() != 1)
+	{
+		throw std::runtime_error(
+			"listen: expected exactly one argument (port or host:port)");
+	}
+	parseListen(listenValues[0], cfg.host_, cfg.port_);
 
 	const std::vector<std::string>& rootValues = block.directives.at("root");
 	if (rootValues.empty())
@@ -192,18 +239,21 @@ CFG_Server buildCfgServer(const ConfigBlock& block)
 		cfg.max_body_size_ = size;
 	}
 
-	it = block.directives.find("error_page");
-	if (it != block.directives.end() && it->second.size() >= 2)
+	// error_page <код> [<код> ...] <путь>;  можно повторять.
+	// Если один код указан дважды, побеждает последняя строка (как в nginx).
+	for (size_t i = 0; i < block.error_pages.size(); ++i)
 	{
-		std::stringstream ss(it->second[0]);
-		int code;
-		ss >> code;
-		if (ss.fail() || !ss.eof() || code < 100 || code > 599)
+		const std::vector<std::string>& values = block.error_pages[i];
+		if (values.size() < 2)
 		{
-			throw std::runtime_error("Invalid error_page code: "
-									 + it->second[0]);
+			throw std::runtime_error(
+				"error_page: expected at least one code and a path");
 		}
-		cfg.error_pages_[code] = it->second[1];
+		const std::string& path = values[values.size() - 1];
+		for (size_t j = 0; j + 1 < values.size(); ++j)
+		{
+			cfg.error_pages_[parseErrorCode(values[j])] = path;
+		}
 	}
 
 	for (size_t i = 0; i < block.children.size(); ++i)
@@ -215,4 +265,34 @@ CFG_Server buildCfgServer(const ConfigBlock& block)
 	}
 
 	return cfg;
+}
+
+/*
+ * Два server-блока на одном host:port - ошибка конфига: виртуальных хостов
+ * (выбора блока по заголовку Host) у нас нет. Проверяем до создания сокетов,
+ * чтобы ошибка в конфиге не успела открыть ни одного.
+ *
+ * map: ключ host:port -> номер блока, где он встретился впервые.
+ * insert не перезаписывает: если ключ уже есть, .second == false,
+ * а .first указывает на старую запись (откуда берём номер первого блока).
+ */
+void checkDuplicateListens(const std::vector<Server*>& servers)
+{
+	typedef std::pair<std::string, int> Endpoint;
+	std::map<Endpoint, size_t> seen;
+
+	for (size_t i = 0; i < servers.size(); ++i)
+	{
+		Endpoint key(servers[i]->get_host(), servers[i]->get_port());
+		std::pair<std::map<Endpoint, size_t>::iterator, bool> res =
+			seen.insert(std::make_pair(key, i));
+		if (!res.second)
+		{
+			std::stringstream ss;
+			ss << "Duplicate listen " << key.first << ":" << key.second
+			   << " in server blocks " << res.first->second + 1 << " and "
+			   << i + 1;
+			throw std::runtime_error(ss.str());
+		}
+	}
 }

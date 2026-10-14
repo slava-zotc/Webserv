@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <string>
 
 /**
  * @class ListeningSocket
@@ -19,10 +20,11 @@ class ListeningSocket
 public:
     /**
      * @brief Конструктор. Создаёт и настраивает слушающий сокет.
-     * @param port Номер порта для прослушивания (0-65535)
+     * @param host Интерфейс: IPv4-адрес или имя ("0.0.0.0" = все интерфейсы)
+     * @param port Номер порта для прослушивания (1-65535)
      * @throw std::runtime_error если ошибка при создании/конфигурировании сокета
      */
-    ListeningSocket(int port);
+    ListeningSocket(const std::string& host, int port);
 
     /**
      * @brief Деструктор. Закрывает слушающий сокет.
@@ -48,6 +50,12 @@ private:
      * @throw std::runtime_error если ошибка при socket() или fcntl()
      */
     static int create_non_blocking_socket_fd();
+
+    /**
+     * @brief Переводит host:port в адрес для bind() через getaddrinfo
+     * @throw std::runtime_error если имя не резолвится в IPv4-адрес
+     */
+    static struct sockaddr_in resolve(const std::string& host, int port);
 
     ListeningSocket(const ListeningSocket &src);
     ListeningSocket &operator=(const ListeningSocket &rhs);

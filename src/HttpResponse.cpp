@@ -1,5 +1,6 @@
 #include "HttpResponse.hpp"
 
+#include <cctype>
 #include <sstream>
 #include <string>
 
@@ -110,7 +111,13 @@ const std::string& HttpResponse::get_reason_phrase() const
 
 void HttpResponse::set_header(const std::string& key, const std::string& value)
 {
-	if (key == "Content-Length" || key == "content-length")
+	// Content-Length и Connection всегда выставляет serialize(): длину он
+	// считает сам по телу, а соединение мы после ответа всегда закрываем.
+	// Чужое значение (например, из заголовков CGI) дало бы дубль или ложь.
+	std::string lower = key;
+	for (std::string::size_type i = 0; i < lower.size(); ++i)
+		lower[i] = std::tolower(static_cast<unsigned char>(lower[i]));
+	if (lower == "content-length" || lower == "connection")
 	{
 		return;
 	}
@@ -129,6 +136,11 @@ std::string HttpResponse::serialize() const
 		ss << it->first << ": " << it->second << "\r\n";
 	}
 	ss << "Content-Length: " << body_.size() << "\r\n";
+	// RFC 9112 §9.6: сервер, который закроет соединение после ответа,
+	// ДОЛЖЕН (SHOULD) сообщить об этом "Connection: close". Мы обслуживаем
+	// один запрос на соединение, поэтому шлём его всегда; так и клиент
+	// HTTP/1.1 не ждёт следующего ответа на том же сокете.
+	ss << "Connection: close\r\n";
 	ss << "\r\n";
 	ss << body_;
 	return ss.str();

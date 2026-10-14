@@ -1,5 +1,7 @@
 #include "ConfigParser.hpp"
 
+#include <stdexcept>
+
 std::vector<ConfigBlock> ConfigParser::parse() {
     std::vector<ConfigBlock> blocks;
     while (pos < tokens.size()) {
@@ -8,9 +10,20 @@ std::vector<ConfigBlock> ConfigParser::parse() {
     return blocks;
 }
 
-const std::string& ConfigParser::peek() { return tokens.at(pos); }
+// Конфиг оборвался посреди блока или директивы (нет '}' или ';').
+// Без этой проверки tokens.at() бросал бы непонятное vector::_M_range_check.
+const std::string& ConfigParser::peek() {
+    if (pos >= tokens.size())
+        throw std::runtime_error("Unexpected end of config file "
+                                 "(missing '}' or ';'?)");
+    return tokens[pos];
+}
 
-std::string ConfigParser::advance() { return tokens.at(pos++); }
+std::string ConfigParser::advance() {
+    std::string tok = peek();
+    ++pos;
+    return tok;
+}
 
 ConfigBlock ConfigParser::parseBlock() {
     ConfigBlock block;
@@ -40,6 +53,20 @@ void ConfigParser::parseDirective(ConfigBlock& block) {
         values.push_back(advance());
     }
     advance(); // consume ';'
+
+    // error_page - единственная директива, которую можно повторять:
+    // по строке на каждый код (или группу кодов).
+    if (key == "error_page") {
+        block.error_pages.push_back(values);
+        return;
+    }
+    // Любой другой повтор - ошибка конфига. Раньше второе вхождение молча
+    // перезаписывало первое, и такую опечатку было трудно заметить.
+    if (block.directives.count(key)) {
+        throw std::runtime_error("Duplicate directive '" + key + "' in "
+                                 + block.name
+                                 + (block.arg.empty() ? "" : " " + block.arg));
+    }
     block.directives[key] = values;
 }
 

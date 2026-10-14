@@ -90,6 +90,23 @@ std::vector<std::string> CgiProcess::get_dir_and_filename(
 	return resul;
 }
 
+static std::string server_name(const HttpRequest& request,
+							   const Server& server)
+{
+	const std::map<std::string, std::string>& headers = request.get_headers();
+	std::map<std::string, std::string>::const_iterator it =
+		headers.find("host");
+	if (it != headers.end() && !it->second.empty())
+	{
+		std::string host = it->second;
+		std::string::size_type colon = host.find(':');
+		if (colon != std::string::npos) host.erase(colon);
+		if (!host.empty()) return host;
+	}
+	if (server.get_host() != "0.0.0.0") return server.get_host();
+	return "localhost";
+}
+
 std::vector<std::string> CgiProcess::get_env_string(const HttpRequest& request,
 													const Server& server,
 													const std::string& filename)
@@ -109,7 +126,9 @@ std::vector<std::string> CgiProcess::get_env_string(const HttpRequest& request,
 	ss << server.get_port();
 	result.push_back("SERVER_PORT=" + ss.str());
 	result.push_back("SCRIPT_NAME=" + request.get_path());
-	result.push_back("SERVER_NAME=localhost");
+	// RFC 3875 §4.1.14: SERVER_NAME - имя сервера, к которому обратился
+	// клиент; берём его из Host без порта, иначе из listen.
+	result.push_back("SERVER_NAME=" + server_name(request, server));
 
 	const std::map<std::string, std::string>& headers = request.get_headers();
 

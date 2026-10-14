@@ -97,10 +97,7 @@ int main(int argc, char** argv)
 									 + std::string(argv[1]));
 		}
 
-		for (size_t i = 0; i < servers[0]->get_route().size(); i++)
-		{
-			std::cout << servers[0]->get_route()[i] << std::endl;
-		}
+		checkDuplicateListens(servers);
 
 		Core core(servers);
 		core.core_loop();

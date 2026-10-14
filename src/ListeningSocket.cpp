@@ -1,8 +1,11 @@
 #include "ListeningSocket.hpp"
 
+#include <netdb.h>
 #include <sys/socket.h>
 
+#include <cerrno>
 #include <cstring>
+#include <sstream>
 #include <iostream>
 
 /**
@@ -37,35 +40,75 @@ int ListeningSocket::get_listen_socket_fd() const
 }
 
 /**
+ * @brief Строка "host:port" для сообщений об ошибках
+ */
+static std::string endpoint(const std::string& host, int port)
+{
+	std::stringstream ss;
+	ss << host << ":" << port;
+	return ss.str();
+}
+
+/**
+ * @brief Переводит host в IPv4-адрес и добавляет порт
+ *
+ * getaddrinfo понимает и "127.0.0.1", и "localhost". AF_INET - потому что
+ * сокет создаётся как IPv4 (PF_INET). AI_PASSIVE - адрес нужен для bind().
+ */
+struct sockaddr_in ListeningSocket::resolve(const std::string& host, int port)
+{
+	struct addrinfo hints;
+	std::memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE;
+
+	struct addrinfo* res = NULL;
+	int rc = getaddrinfo(host.c_str(), NULL, &hints, &res);
+	if (rc != 0 || res == NULL)
+	{
+		throw std::runtime_error("Cannot resolve listen host "
+								 + endpoint(host, port) + ": "
+								 + gai_strerror(rc));
+	}
+	struct sockaddr_in addr;
+	std::memcpy(&addr, res->ai_addr, sizeof(addr));
+	freeaddrinfo(res);
+	addr.sin_port = htons(port);  // порт в сетевом порядке байт
+	return addr;
+}
+
+/**
  * @brief Конструктор. Настраивает слушающий сокет
+ * @param host Интерфейс ("0.0.0.0" = все)
  * @param port Номер порта для прослушивания
  * @throw std::runtime_error если ошибка при bind() или listen()
+ *
+ * Если конструктор бросит исключение, fd всё равно закроется: член
+ * fd_socket уже полностью сконструирован, и C++ вызовет его деструктор.
  */
-ListeningSocket::ListeningSocket(int port)
+ListeningSocket::ListeningSocket(const std::string& host, int port)
 	: fd_socket(create_non_blocking_socket_fd())
 {
 	int server_fd = get_listen_socket_fd();
+	struct sockaddr_in addr = resolve(host, port);
 
-	// Настраиваем адрес для bind()
-	struct sockaddr_in adrr;
-	std::memset(&adrr, 0, sizeof(adrr));
-	adrr.sin_family = AF_INET;	// IPv4
-	adrr.sin_port =
-		htons(port);  // Преобразуем номер порта в нетверковой формат
-	adrr.sin_addr.s_addr = INADDR_ANY;	// Послушиваем все интерфейсы
-
+	// SO_REUSEADDR: после перезапуска сервера порт занят ещё ~60 с
+	// (TIME_WAIT); без опции bind() в это время бы падал.
 	int opt = 1;
 	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))
 		== -1)
-		std::cerr << "Error func setsockopt" << std::endl;
-	// Привязываем сокет к порту
-	if (bind(server_fd, (struct sockaddr*)&adrr, sizeof(adrr)) == -1)
-		throw std::runtime_error("ERROR func bind");
+		std::cerr << "Warning: setsockopt(SO_REUSEADDR) failed" << std::endl;
 
-	// Настраиваем ковартилу входящих необработанных соединений
-	// (128 соединения)
+	// errno здесь читать можно: запрет subject касается только read/write.
+	if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
+		throw std::runtime_error("Cannot listen on " + endpoint(host, port)
+								 + ": " + std::strerror(errno));
+
+	// Очередь ещё не принятых соединений (backlog)
 	if (listen(server_fd, 128) == -1)
-		throw std::runtime_error("ERROR func listen");
+		throw std::runtime_error("Cannot listen on " + endpoint(host, port)
+								 + ": " + std::strerror(errno));
 }
 
 /**

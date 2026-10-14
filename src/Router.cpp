@@ -5,6 +5,25 @@
 #include <cstdio>
 #include <sstream>
 
+/**
+ * @brief Ответ 405 с заголовком Allow
+ *
+ * RFC 9110 §15.5.6: сервер, отвечающий 405, ОБЯЗАН (MUST) прислать Allow
+ * со списком методов, которые этот ресурс поддерживает (§10.2.1).
+ */
+static HttpResponse method_not_allowed(const Route& route)
+{
+	std::string allow;
+	int mask = route.get_allowed_methods();
+	if (mask & Route::GET) allow += "GET";
+	if (mask & Route::POST) allow += allow.empty() ? "POST" : ", POST";
+	if (mask & Route::DELETE) allow += allow.empty() ? "DELETE" : ", DELETE";
+
+	HttpResponse response(405);
+	response.set_header("Allow", allow);  // пустой Allow = "ничего нельзя"
+	return response;
+}
+
 int Router::method_to_route_bit(HttpRequest::Methods method)
 {
 	switch (method)
@@ -73,6 +92,14 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 	const Route* route = matching(request.get_path(), server.get_route());
 	HttpResponse response(404);
 
+	// RFC 9110 §9.1 и §15.6.2: метод, который сервер не знает, - это 501,
+	// а не 405 (405 значит "метод знаю, но здесь нельзя"). Проверяем до
+	// поиска location, чтобы ответ не зависел от пути.
+	if (request.get_method() == HttpRequest::UNKNOWN)
+	{
+		return apply_error_page(HttpResponse(501), server);
+	}
+
 	if (route == NULL)
 	{
 		return apply_error_page(response, server);
@@ -85,7 +112,7 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 	else if (request.get_method() == HttpRequest::GET)
 	{
 		if (!(route->get_allowed_methods() & Route::GET))
-			response = HttpResponse(405);
+			response = method_not_allowed(*route);
 		else
 		{
 			std::string path = resolve_path(request.get_path(), *route);
@@ -95,7 +122,7 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 	else if (request.get_method() == HttpRequest::POST)
 	{
 		if (!(route->get_allowed_methods() & Route::POST))
-			response = HttpResponse(405);
+			response = method_not_allowed(*route);
 		else if (!route->get_upload_enabled())
 			response = HttpResponse(403);
 		else
@@ -107,16 +134,12 @@ const HttpResponse Router::handle_request(const HttpRequest& request,
 	else if (request.get_method() == HttpRequest::DELETE)
 	{
 		if (!(route->get_allowed_methods() & Route::DELETE))
-			response = HttpResponse(405);
+			response = method_not_allowed(*route);
 		else
 		{
 			std::string path = resolve_path(request.get_path(), *route);
 			response = handle_delete_method(path);
 		}
-	}
-	else
-	{
-		response = HttpResponse(405);
 	}
 
 	return apply_error_page(response, server);

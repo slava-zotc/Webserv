@@ -7,6 +7,7 @@
 
 struct CFG_Server
 {
+	std::string host_;	///< "0.0.0.0" = все интерфейсы
 	int port_;
 	unsigned long max_body_size_;
 	std::vector<Route> routes_;
@@ -20,9 +21,11 @@ public:
 	~Server();
 	const std::vector<Route>& get_route() const;
 	int get_port() const;
+	const std::string& get_host() const;
 	unsigned long get_max_body_size() const;
 	const std::map<int, std::string>& get_error_pages() const;
 private:
+	std::string host;
 	int port;
 	unsigned long max_body_size_;
 	std::vector<Route> route;

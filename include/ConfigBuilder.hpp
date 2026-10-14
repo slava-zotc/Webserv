@@ -8,5 +8,6 @@
 
 CFG_Server buildCfgServer(const ConfigBlock& block);
 CFG_Route  buildCfgRoute(const ConfigBlock& block, const std::string& parentRoot);
+void       checkDuplicateListens(const std::vector<Server*>& servers);
 
 #endif

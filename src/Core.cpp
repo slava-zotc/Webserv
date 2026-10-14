@@ -1,6 +1,7 @@
 #include "Core.hpp"
 
 #include <csignal>
+#include <stdexcept>
 
 /**
  * @brief Глобальная переменная для отслеживания статуса сигналов
@@ -23,26 +24,40 @@ void signal_handler(int signum)
 }
 
 /**
- * @brief Конструктор Core
- * @param port Номер порта для прослушивания входящих соединений
+ * @brief Конструктор Core: по слушающему сокету на каждый server-блок
+ * @param servers Серверы из конфига
+ * @throw std::runtime_error при ошибке bind/listen
  *
- * Создаёт слушающий сокет и добавляет его в карту активных сокетов.
+ * Повтор host:port сюда уже не доходит: его ловит checkDuplicateListens()
+ * в main, вместе с остальными ошибками конфига.
+ *
+ * Если конструктор бросает исключение, деструктор ~Core() НЕ вызывается
+ * (объект так и не был создан). Поэтому уже открытые сокеты удаляем сами
+ * в catch, иначе их fd и память утекут.
  */
-Core::Core(int port)
-{
-	ListeningSocket* server_socket = new ListeningSocket(port);
-	listening_sockets[server_socket->get_listen_socket_fd()] = server_socket;
-}
-
 Core::Core(std::vector<Server*>& servers)
 {
-	for (size_t i = 0; i < servers.size(); i++)
+	try
 	{
-		ListeningSocket* server_socket =
-			new ListeningSocket(servers[i]->get_port());
-		int fd = server_socket->get_listen_socket_fd();
-		listening_sockets[fd] = server_socket;
-		server_for_listening_fd[fd] = servers[i];
+		for (size_t i = 0; i < servers.size(); i++)
+		{
+			ListeningSocket* server_socket = new ListeningSocket(
+				servers[i]->get_host(), servers[i]->get_port());
+			int fd = server_socket->get_listen_socket_fd();
+			listening_sockets[fd] = server_socket;
+			server_for_listening_fd[fd] = servers[i];
+		}
+	}
+	catch (...)
+	{
+		for (std::map<int, ListeningSocket*>::iterator it =
+				 listening_sockets.begin();
+			 it != listening_sockets.end(); ++it)
+		{
+			delete it->second;
+		}
+		listening_sockets.clear();
+		throw;
 	}
 }
 
