@@ -137,14 +137,42 @@ void HttpRequest::process_start_line(const std::string& line)
 		return;
 	}
 	method_ = convert_method_str(method_str);
+
+	// Версия: "HTTP/<цифра>.<цифра>" (RFC 9112 §2.3). Не тот формат — 400,
+	// другая старшая версия (HTTP/2.0, HTTP/3.0) — 505 (RFC 9110 §15.6.6).
+	if (version_str.size() != 8 || version_str.compare(0, 5, "HTTP/") != 0
+		|| !std::isdigit(static_cast<unsigned char>(version_str[5]))
+		|| version_str[6] != '.'
+		|| !std::isdigit(static_cast<unsigned char>(version_str[7])))
+	{
+		parsing_state_ = PARSING_ERROR;	 // 400
+		return;
+	}
+	if (version_str[5] != '1')
+	{
+		error_status_ = 505;
+		parsing_state_ = PARSING_ERROR;
+		return;
+	}
+
+	std::string raw_path;
 	size_t pos = path_str.find_first_of('?');
 	if (pos != std::string::npos)
 	{
-		path_ = path_str.substr(0, pos);
+		raw_path = path_str.substr(0, pos);
 		query_string_ = path_str.substr(pos + 1);
 	}
 	else
-		path_ = path_str;
+		raw_path = path_str;
+
+	// Защита от выхода за root через "..": путь декодируется (%XX) и
+	// нормализуется здесь, ДО поиска маршрута, поэтому GET/POST/DELETE и
+	// CGI получают уже безопасный путь. Некорректный путь — 400.
+	if (!normalize_path(raw_path, path_))
+	{
+		parsing_state_ = PARSING_ERROR;	 // 400
+		return;
+	}
 	version_ = version_str;
 	parsing_state_ = PARSING_HEADERS;
 }

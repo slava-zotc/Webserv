@@ -7,4 +7,6 @@ bool parse_header_line(const std::string& line, std::string& key, std::string& v
 bool is_tchar(char c);
 bool is_token(const std::string& str);
 bool has_forbidden_chars(const std::string& value);
+bool percent_decode(const std::string& in, std::string& out);
+bool normalize_path(const std::string& raw, std::string& out);
 #endif // HTTP_UTILS_HPP
